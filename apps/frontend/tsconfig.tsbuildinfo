@@ -1,0 +1,1 @@
+{"root":["./src/app.tsx","./src/main.tsx","./src/vite-env.d.ts","./src/components/emulatorview.tsx","./src/components/layout.tsx","./src/lib/api.ts","./src/pages/addgamepage.tsx","./src/pages/dashboardpage.tsx","./src/pages/gamedetailpage.tsx","./src/pages/platformgamespage.tsx","./src/pages/platformspage.tsx"],"version":"5.9.3"}

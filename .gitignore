@@ -1,0 +1,10 @@
+node_modules/
+dist/
+.turbo/
+data/
+*.db
+*.db-journal
+.env
+.env.local
+.DS_Store
+apps/frontend/public/emulator/

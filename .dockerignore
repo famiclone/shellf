@@ -1,0 +1,8 @@
+node_modules
+.turbo
+data
+.git
+.env
+*.db
+apps/frontend/dist
+apps/frontend/public/emulator
