@@ -9,7 +9,8 @@ import {
   LuTrash2,
   LuUpload,
 } from "react-icons/lu";
-import type { Game, MediaType } from "@shellf/shared";
+import type { Game, Item, MediaType } from "@shellf/shared";
+import { kindHasFeature } from "@shellf/shared";
 import { api } from "../lib/api";
 import { useI18n, type MessageKey } from "../lib/i18n";
 
@@ -21,7 +22,7 @@ type PendingAction =
 
 interface EditGameAssetsProps {
   gameId: number;
-  game: Game;
+  game: Item | Game;
 }
 
 function formatSize(bytes: number) {
@@ -45,7 +46,7 @@ export function EditGameAssets({ gameId, game }: EditGameAssetsProps) {
   const replacingMediaIdRef = useRef<number | null>(null);
 
   const refresh = () => {
-    queryClient.invalidateQueries({ queryKey: ["game", gameId] });
+    queryClient.invalidateQueries({ queryKey: ["item", gameId] });
   };
 
   const onAssetError = (err: unknown) => {
@@ -72,7 +73,7 @@ export function EditGameAssets({ gameId, game }: EditGameAssetsProps) {
   });
 
   const scrapeMutation = useMutation({
-    mutationFn: () => api.scrapeGame(gameId),
+    mutationFn: () => api.scrapeItem(gameId),
     onSuccess: () => {
       setAssetError("");
       refresh();
@@ -219,17 +220,24 @@ export function EditGameAssets({ gameId, game }: EditGameAssetsProps) {
       )
     : null;
 
-  const mediaByType: Record<MediaType, NonNullable<Game["mediaAssets"]>> = {
+  const mediaByType: Record<MediaType, NonNullable<Item["mediaAssets"]>> = {
     box: game.mediaAssets?.filter((m) => m.type === "box") ?? [],
     photo: game.mediaAssets?.filter((m) => m.type === "photo") ?? [],
     manual: game.mediaAssets?.filter((m) => m.type === "manual") ?? [],
   };
+
+  const features = game.kind?.features;
+  const showRom = kindHasFeature(features, "rom");
+  const showScrape = kindHasFeature(features, "scrape");
+  const showPatches = kindHasFeature(features, "patches");
+  const showSaves = kindHasFeature(features, "saves");
 
   return (
     <>
       <div className="card edit-assets" style={{ maxWidth: 520, marginTop: "1rem" }}>
         <h3 style={{ marginBottom: "1rem" }}>{t("assets.files")}</h3>
 
+        {showRom && (
         <section className="edit-asset-section">
           <h4>ROM</h4>
           {game.romFile ? (
@@ -246,6 +254,7 @@ export function EditGameAssets({ gameId, game }: EditGameAssetsProps) {
                   <LuDownload aria-hidden />
                   {t("common.download")}
                 </a>
+                {showScrape && (
                 <button
                   type="button"
                   className="btn-secondary with-icon"
@@ -257,6 +266,7 @@ export function EditGameAssets({ gameId, game }: EditGameAssetsProps) {
                     ? t("game.syncing")
                     : t("assets.screenscraper")}
                 </button>
+                )}
                 <button
                   type="button"
                   className="btn-secondary with-icon"
@@ -302,6 +312,7 @@ export function EditGameAssets({ gameId, game }: EditGameAssetsProps) {
             }}
           />
         </section>
+        )}
 
         {(["box", "photo", "manual"] as const).map((type) => {
           const assets = mediaByType[type];
@@ -409,6 +420,7 @@ export function EditGameAssets({ gameId, game }: EditGameAssetsProps) {
           );
         })}
 
+        {showPatches && (
         <section className="edit-asset-section">
           <h4>{t("assets.patches")}</h4>
           {game.patches && game.patches.length > 0 ? (
@@ -465,7 +477,9 @@ export function EditGameAssets({ gameId, game }: EditGameAssetsProps) {
             }}
           />
         </section>
+        )}
 
+        {showSaves && (
         <section className="edit-asset-section">
           <h4>{t("assets.saves")}</h4>
           {game.saves && game.saves.length > 0 ? (
@@ -531,6 +545,7 @@ export function EditGameAssets({ gameId, game }: EditGameAssetsProps) {
             }}
           />
         </section>
+        )}
 
         {assetError && <p className="error">{assetError}</p>}
       </div>

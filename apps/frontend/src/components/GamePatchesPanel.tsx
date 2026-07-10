@@ -29,14 +29,14 @@ export function GamePatchesPanel({
 
   const patchMutation = useMutation({
     mutationFn: (file: File) => api.uploadPatch(gameId, file),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["game", gameId] }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["item", gameId] }),
   });
 
   const deletePatchMutation = useMutation({
     mutationFn: (patchId: number) => api.deletePatch(gameId, patchId),
     onSuccess: (_, patchId) => {
       if (selectedPatchId === patchId) onSelectPatchId(undefined);
-      queryClient.invalidateQueries({ queryKey: ["game", gameId] });
+      queryClient.invalidateQueries({ queryKey: ["item", gameId] });
     },
   });
 

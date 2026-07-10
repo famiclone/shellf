@@ -3,8 +3,11 @@ import { cors } from "hono/cors";
 import { logger } from "hono/logger";
 import { runMigrations } from "./db";
 import { ensureDataDirs } from "./lib/storage";
-import { gameRoutes } from "./routes/games";
-import { platformRoutes } from "./routes/platforms";
+import { groupRoutes } from "./routes/groups";
+import { itemRoutes } from "./routes/items";
+import { kindRoutes } from "./routes/kinds";
+import { settingsRoutes } from "./routes/settings";
+import { tagRoutes } from "./routes/tags";
 
 ensureDataDirs();
 runMigrations();
@@ -22,8 +25,16 @@ app.use(
 
 app.get("/health", (c) => c.json({ status: "ok" }));
 
-app.route("/api/platforms", platformRoutes);
-app.route("/api/games", gameRoutes);
+app.route("/api/kinds", kindRoutes);
+app.route("/api/groups", groupRoutes);
+app.route("/api/tags", tagRoutes);
+app.route("/api/items", itemRoutes);
+app.route("/api/settings", settingsRoutes);
+
+/** @deprecated Prefer /api/groups */
+app.route("/api/platforms", groupRoutes);
+/** @deprecated Prefer /api/items */
+app.route("/api/games", itemRoutes);
 
 const port = Number(process.env.PORT ?? 3000);
 console.log(`Shellf API running on http://localhost:${port}`);

@@ -3,11 +3,14 @@ import { createRoot } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter } from "react-router-dom";
 import App from "./App";
+import { AlertProvider } from "./lib/alerts";
+import { AlertToasts } from "./components/AlertToasts";
 import {
   LocaleProvider,
   applyLocale,
   getStoredLocale,
 } from "./lib/i18n";
+import { SettingsSync } from "./lib/SettingsSync";
 import { ThemeProvider, applyTheme, getStoredTheme } from "./lib/theme";
 import "./index.css";
 
@@ -24,11 +27,15 @@ createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <LocaleProvider>
       <ThemeProvider>
-        <QueryClientProvider client={queryClient}>
-          <BrowserRouter>
-            <App />
-          </BrowserRouter>
-        </QueryClientProvider>
+        <AlertProvider>
+          <QueryClientProvider client={queryClient}>
+            <SettingsSync />
+            <BrowserRouter>
+              <App />
+              <AlertToasts />
+            </BrowserRouter>
+          </QueryClientProvider>
+        </AlertProvider>
       </ThemeProvider>
     </LocaleProvider>
   </StrictMode>,

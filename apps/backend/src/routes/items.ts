@@ -1,32 +1,51 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { basename, extname } from "node:path";
-import { eq, and } from "drizzle-orm";
+import { eq, and, inArray } from "drizzle-orm";
 import { Hono } from "hono";
 import {
-  createGameSchema,
-  updateGameSchema,
-  normalizeGenres,
+  createItemSchema,
+  updateItemSchema,
+  kindHasFeature,
+  normalizeTagNames,
+  priceForCondition,
+  type GameCondition,
+  type KindFeatures,
   type MediaType,
+  type Region,
   PATCH_FORMATS,
 } from "@shellf/shared";
 import { db } from "../db";
 import {
-  games,
+  groups,
+  itemTags,
+  items,
+  kinds,
   mediaAssets,
   patches,
-  platforms,
   romFiles,
   saves,
   scrapedMetadata,
+  tags,
 } from "../db/schema";
 import { computeRomHashes } from "../lib/hashes";
 import { applyPatch, detectPatchFormat, PatchError } from "../lib/patcher";
 import { createZip, type ZipEntry } from "../lib/zip";
 import { lookupByHash } from "../lib/screenscraper";
 import {
+  consoleNameForGroupSlug,
+  lookupProduct,
+  PriceChartingError,
+} from "../lib/pricecharting";
+import {
+  attachTagNames,
+  resolveTagIds,
+  shapeItemWithTags,
+  syncItemTags,
+} from "../lib/tags";
+import {
   ensureParentDir,
   fileExists,
-  deleteGameFiles,
+  deleteItemFiles,
   deletePatchCache,
   deleteStoredFile,
   clearPatchedCache,
@@ -82,107 +101,205 @@ function safeStorageFilename(filename: string, fallbackExt: string): string {
   return `${safeBase}${ext.toLowerCase()}`;
 }
 
-const gameInclude = {
-  platform: true as const,
+const itemInclude = {
+  kind: true as const,
+  group: true as const,
   romFile: true as const,
   mediaAssets: true as const,
   patches: true as const,
   saves: true as const,
   scrapedMetadata: true as const,
+  itemTags: {
+    with: {
+      tag: true as const,
+    },
+  },
 };
 
-async function getGameOr404(id: number) {
-  return db.query.games.findFirst({
-    where: eq(games.id, id),
-    with: gameInclude,
+async function getItemOr404(id: number) {
+  const item = await db.query.items.findFirst({
+    where: eq(items.id, id),
+    with: itemInclude,
   });
+  return item ? shapeItemWithTags(item) : undefined;
 }
 
-export const gameRoutes = new Hono();
+function itemHasFeature(
+  item: { kind?: { features?: KindFeatures | null } | null },
+  feature: keyof KindFeatures,
+) {
+  return kindHasFeature(item.kind?.features, feature);
+}
 
-gameRoutes.get("/", async (c) => {
-  const platformId = c.req.query("platformId");
+export const itemRoutes = new Hono();
+
+itemRoutes.get("/", async (c) => {
+  const groupId = c.req.query("groupId") ?? c.req.query("platformId");
   const search = c.req.query("search");
+  const tagSlug = c.req.query("tag");
+  const tagIdParam = c.req.query("tagId");
 
-  const allGames = await db.query.games.findMany({
-    where: platformId
-      ? (g, { eq: eqFn }) => eqFn(g.platformId, Number(platformId))
-      : undefined,
+  let tagItemIds: number[] | null = null;
+  if (tagIdParam || tagSlug) {
+    const tagRow = tagIdParam
+      ? await db.query.tags.findFirst({ where: eq(tags.id, Number(tagIdParam)) })
+      : await db.query.tags.findFirst({ where: eq(tags.slug, tagSlug!) });
+    if (!tagRow) return c.json([]);
+    const links = await db
+      .select({ itemId: itemTags.itemId })
+      .from(itemTags)
+      .where(eq(itemTags.tagId, tagRow.id));
+    tagItemIds = links.map((l) => l.itemId);
+    if (!tagItemIds.length) return c.json([]);
+  }
+
+  const allItems = await db.query.items.findMany({
+    where: (fields, { eq: eqFn, and: andFn, inArray: inArr }) => {
+      const parts = [];
+      if (groupId) parts.push(eqFn(fields.groupId, Number(groupId)));
+      if (tagItemIds) parts.push(inArr(fields.id, tagItemIds));
+      if (!parts.length) return undefined;
+      return parts.length === 1 ? parts[0]! : andFn(...parts);
+    },
     with: {
-      platform: true,
+      kind: true,
+      group: true,
       romFile: true,
       mediaAssets: true,
       scrapedMetadata: true,
+      itemTags: { with: { tag: true } },
     },
     orderBy: (g, { desc }) => [desc(g.updatedAt)],
   });
 
   const filtered = search
-    ? allGames.filter((g) =>
+    ? allItems.filter((g) =>
         g.title.toLowerCase().includes(search.toLowerCase()),
       )
-    : allGames;
+    : allItems;
 
-  return c.json(filtered);
+  return c.json(filtered.map(shapeItemWithTags));
 });
 
-gameRoutes.get("/:id", async (c) => {
+itemRoutes.get("/:id", async (c) => {
   const id = Number(c.req.param("id"));
-  const game = await getGameOr404(id);
-  if (!game) return c.json({ error: "Гру не знайдено" }, 404);
-  return c.json(game);
+  const item = await getItemOr404(id);
+  if (!item) return c.json({ error: "Айтем не знайдено" }, 404);
+  return c.json(item);
 });
 
-gameRoutes.post("/", async (c) => {
+itemRoutes.post("/", async (c) => {
   const body = await c.req.json();
-  const parsed = createGameSchema.safeParse(body);
+  const parsed = createItemSchema.safeParse(body);
   if (!parsed.success) {
     return c.json({ error: parsed.error.flatten() }, 400);
   }
 
-  const [platform] = await db
-    .select()
-    .from(platforms)
-    .where(eq(platforms.id, parsed.data.platformId));
-  if (!platform) return c.json({ error: "Платформу не знайдено" }, 404);
+  const groupId = parsed.data.groupId ?? parsed.data.platformId!;
+  const [group] = await db.select().from(groups).where(eq(groups.id, groupId));
+  if (!group) return c.json({ error: "Групу не знайдено" }, 404);
+
+  let kindId = parsed.data.kindId ?? group.kindId ?? null;
+  if (!kindId) {
+    const [gameKind] = await db
+      .select()
+      .from(kinds)
+      .where(eq(kinds.slug, "game"));
+    kindId = gameKind?.id ?? null;
+  }
+  if (!kindId) return c.json({ error: "Kind не знайдено" }, 404);
+
+  const [kind] = await db.select().from(kinds).where(eq(kinds.id, kindId));
+  if (!kind) return c.json({ error: "Kind не знайдено" }, 404);
+
+  const {
+    platformId: _platformId,
+    groupId: _groupId,
+    kindId: _kindId,
+    tagIds,
+    tags: tagNames,
+    genres,
+    ...rest
+  } = parsed.data;
 
   const [created] = await db
-    .insert(games)
+    .insert(items)
     .values({
-      ...parsed.data,
-      genres: normalizeGenres(parsed.data.genres ?? []),
+      ...rest,
+      groupId,
+      kindId,
+      isPirate: parsed.data.isPirate ?? false,
       updatedAt: new Date().toISOString(),
     })
     .returning();
 
-  const game = await getGameOr404(created!.id);
-  return c.json(game, 201);
+  const resolvedTagIds = await resolveTagIds({
+    tagIds,
+    tagNames: [...(tagNames ?? []), ...(genres ?? [])],
+  });
+  await syncItemTags(created!.id, resolvedTagIds);
+
+  const item = await getItemOr404(created!.id);
+  return c.json(item, 201);
 });
 
-gameRoutes.patch("/:id", async (c) => {
+itemRoutes.patch("/:id", async (c) => {
   const id = Number(c.req.param("id"));
   const body = await c.req.json();
-  const parsed = updateGameSchema.safeParse(body);
+  const parsed = updateItemSchema.safeParse(body);
   if (!parsed.success) {
     return c.json({ error: parsed.error.flatten() }, 400);
   }
 
-  const { marketPrice, ...gameData } = parsed.data;
-  if (gameData.genres !== undefined) {
-    gameData.genres = normalizeGenres(gameData.genres ?? []);
+  const {
+    marketPrice,
+    platformId: _platformId,
+    tagIds,
+    tags: tagNames,
+    genres,
+    ...itemData
+  } = parsed.data;
+
+  const patchValues: Partial<typeof items.$inferInsert> = {
+    updatedAt: new Date().toISOString(),
+  };
+  if (itemData.title !== undefined) patchValues.title = itemData.title;
+  if (itemData.region !== undefined) patchValues.region = itemData.region;
+  if (itemData.purchasePrice !== undefined) {
+    patchValues.purchasePrice = itemData.purchasePrice;
   }
+  if (itemData.currency !== undefined) patchValues.currency = itemData.currency;
+  if (itemData.condition !== undefined) patchValues.condition = itemData.condition;
+  if (itemData.isPirate !== undefined) {
+    patchValues.isPirate = itemData.isPirate ?? false;
+  }
+  if (itemData.notes !== undefined) patchValues.notes = itemData.notes;
+  if (itemData.customMeta !== undefined) {
+    patchValues.customMeta = itemData.customMeta;
+  }
+  const nextGroupId = itemData.groupId ?? _platformId;
+  if (nextGroupId !== undefined) patchValues.groupId = nextGroupId;
 
   const [updated] = await db
-    .update(games)
-    .set({ ...gameData, updatedAt: new Date().toISOString() })
-    .where(eq(games.id, id))
+    .update(items)
+    .set(patchValues)
+    .where(eq(items.id, id))
     .returning();
 
-  if (!updated) return c.json({ error: "Гру не знайдено" }, 404);
+  if (!updated) return c.json({ error: "Айтем не знайдено" }, 404);
+
+  if (tagIds !== undefined || tagNames !== undefined || genres !== undefined) {
+    const resolvedTagIds = await resolveTagIds({
+      tagIds: tagIds ?? undefined,
+      tagNames: normalizeTagNames([...(tagNames ?? []), ...(genres ?? [])]),
+    });
+    // If only tagIds provided (possibly empty), replace; if only names, replace with resolved
+    await syncItemTags(id, resolvedTagIds);
+  }
 
   if (marketPrice !== undefined) {
     const existing = await db.query.scrapedMetadata.findFirst({
-      where: eq(scrapedMetadata.gameId, id),
+      where: eq(scrapedMetadata.itemId, id),
     });
     if (existing) {
       await db
@@ -191,36 +308,39 @@ gameRoutes.patch("/:id", async (c) => {
           marketPrice,
           marketPriceSyncedAt: new Date().toISOString(),
         })
-        .where(eq(scrapedMetadata.gameId, id));
+        .where(eq(scrapedMetadata.itemId, id));
     } else {
       await db.insert(scrapedMetadata).values({
-        gameId: id,
+        itemId: id,
         marketPrice,
         marketPriceSyncedAt: new Date().toISOString(),
       });
     }
   }
 
-  const game = await getGameOr404(id);
-  return c.json(game);
+  const item = await getItemOr404(id);
+  return c.json(item);
 });
 
-gameRoutes.delete("/:id", async (c) => {
+itemRoutes.delete("/:id", async (c) => {
   const id = Number(c.req.param("id"));
-  const game = await getGameOr404(id);
-  if (!game) return c.json({ error: "Гру не знайдено" }, 404);
+  const item = await getItemOr404(id);
+  if (!item) return c.json({ error: "Айтем не знайдено" }, 404);
 
-  deleteGameFiles(game);
+  deleteItemFiles(item);
 
-  const [deleted] = await db.delete(games).where(eq(games.id, id)).returning();
-  if (!deleted) return c.json({ error: "Гру не знайдено" }, 404);
+  const [deleted] = await db.delete(items).where(eq(items.id, id)).returning();
+  if (!deleted) return c.json({ error: "Айтем не знайдено" }, 404);
   return c.json({ ok: true });
 });
 
-gameRoutes.post("/:id/rom", async (c) => {
+itemRoutes.post("/:id/rom", async (c) => {
   const id = Number(c.req.param("id"));
-  const game = await getGameOr404(id);
-  if (!game) return c.json({ error: "Гру не знайдено" }, 404);
+  const item = await getItemOr404(id);
+  if (!item) return c.json({ error: "Айтем не знайдено" }, 404);
+  if (!itemHasFeature(item, "rom")) {
+    return c.json({ error: "ROM не підтримується для цього kind" }, 400);
+  }
 
   const formData = await c.req.formData();
   const file = formData.get("file");
@@ -231,12 +351,12 @@ gameRoutes.post("/:id/rom", async (c) => {
   const buffer = Buffer.from(await file.arrayBuffer());
   const hashes = computeRomHashes(buffer);
   const filename = file.name || "rom.bin";
-  const dest = romPath(game.platformId, id, filename);
+  const dest = romPath(item.groupId, id, filename);
   ensureParentDir(dest);
   writeFileSync(dest, buffer);
 
   const relative = relativeToData(dest);
-  const existing = game.romFile;
+  const existing = item.romFile;
   if (existing?.storagePath && existing.storagePath !== relative) {
     deleteStoredFile(existing.storagePath);
   }
@@ -249,10 +369,10 @@ gameRoutes.post("/:id/rom", async (c) => {
         originalFilename: filename,
         ...hashes,
       })
-      .where(eq(romFiles.gameId, id));
+      .where(eq(romFiles.itemId, id));
   } else {
     await db.insert(romFiles).values({
-      gameId: id,
+      itemId: id,
       storagePath: relative,
       originalFilename: filename,
       ...hashes,
@@ -260,36 +380,36 @@ gameRoutes.post("/:id/rom", async (c) => {
   }
 
   await db
-    .update(games)
+    .update(items)
     .set({ updatedAt: new Date().toISOString() })
-    .where(eq(games.id, id));
+    .where(eq(items.id, id));
 
-  const updated = await getGameOr404(id);
+  const updated = await getItemOr404(id);
   return c.json(updated);
 });
 
-gameRoutes.delete("/:id/rom", async (c) => {
+itemRoutes.delete("/:id/rom", async (c) => {
   const id = Number(c.req.param("id"));
-  const game = await getGameOr404(id);
-  if (!game?.romFile) {
+  const item = await getItemOr404(id);
+  if (!item?.romFile) {
     return c.json({ error: "ROM не завантажено" }, 404);
   }
 
-  deleteStoredFile(game.romFile.storagePath);
+  deleteStoredFile(item.romFile.storagePath);
   clearPatchedCache(id);
-  await db.delete(romFiles).where(eq(romFiles.gameId, id));
+  await db.delete(romFiles).where(eq(romFiles.itemId, id));
   await db
-    .update(games)
+    .update(items)
     .set({ updatedAt: new Date().toISOString() })
-    .where(eq(games.id, id));
+    .where(eq(items.id, id));
 
   return c.json({ ok: true });
 });
 
-gameRoutes.post("/:id/media", async (c) => {
+itemRoutes.post("/:id/media", async (c) => {
   const id = Number(c.req.param("id"));
-  const game = await getGameOr404(id);
-  if (!game) return c.json({ error: "Гру не знайдено" }, 404);
+  const item = await getItemOr404(id);
+  if (!item) return c.json({ error: "Айтем не знайдено" }, 404);
 
   const formData = await c.req.formData();
   const file = formData.get("file");
@@ -305,7 +425,7 @@ gameRoutes.post("/:id/media", async (c) => {
     const existingAssets = await db
       .select()
       .from(mediaAssets)
-      .where(and(eq(mediaAssets.gameId, id), eq(mediaAssets.type, type)));
+      .where(and(eq(mediaAssets.itemId, id), eq(mediaAssets.type, type)));
     for (const asset of existingAssets) {
       deleteStoredFile(asset.storagePath);
       await db.delete(mediaAssets).where(eq(mediaAssets.id, asset.id));
@@ -321,7 +441,7 @@ gameRoutes.post("/:id/media", async (c) => {
   const [asset] = await db
     .insert(mediaAssets)
     .values({
-      gameId: id,
+      itemId: id,
       type,
       storagePath: relativeToData(dest),
       mimeType: file.type || "application/octet-stream",
@@ -330,44 +450,44 @@ gameRoutes.post("/:id/media", async (c) => {
     .returning();
 
   await db
-    .update(games)
+    .update(items)
     .set({ updatedAt: new Date().toISOString() })
-    .where(eq(games.id, id));
+    .where(eq(items.id, id));
 
   return c.json(asset, 201);
 });
 
-gameRoutes.delete("/:id/media/:assetId", async (c) => {
-  const gameId = Number(c.req.param("id"));
+itemRoutes.delete("/:id/media/:assetId", async (c) => {
+  const itemId = Number(c.req.param("id"));
   const assetId = Number(c.req.param("assetId"));
   const [asset] = await db
     .select()
     .from(mediaAssets)
     .where(eq(mediaAssets.id, assetId));
 
-  if (!asset || asset.gameId !== gameId) {
+  if (!asset || asset.itemId !== itemId) {
     return c.json({ error: "Медіа не знайдено" }, 404);
   }
 
   deleteStoredFile(asset.storagePath);
   await db.delete(mediaAssets).where(eq(mediaAssets.id, assetId));
   await db
-    .update(games)
+    .update(items)
     .set({ updatedAt: new Date().toISOString() })
-    .where(eq(games.id, gameId));
+    .where(eq(items.id, itemId));
 
   return c.json({ ok: true });
 });
 
-gameRoutes.get("/:id/media/:assetId", async (c) => {
-  const gameId = Number(c.req.param("id"));
+itemRoutes.get("/:id/media/:assetId", async (c) => {
+  const itemId = Number(c.req.param("id"));
   const assetId = Number(c.req.param("assetId"));
   const [asset] = await db
     .select()
     .from(mediaAssets)
     .where(eq(mediaAssets.id, assetId));
 
-  if (!asset || asset.gameId !== gameId) {
+  if (!asset || asset.itemId !== itemId) {
     return c.json({ error: "Медіа не знайдено" }, 404);
   }
 
@@ -377,7 +497,7 @@ gameRoutes.get("/:id/media/:assetId", async (c) => {
   }
 
   const data = readFileSync(fullPath);
-  return new Response(data, {
+  return new Response(new Uint8Array(data), {
     headers: {
       "Content-Type": asset.mimeType || "application/octet-stream",
       "Content-Length": String(data.length),
@@ -387,22 +507,22 @@ gameRoutes.get("/:id/media/:assetId", async (c) => {
 });
 
 async function getRomBuffer(
-  gameId: number,
+  itemId: number,
   patchId?: number,
 ): Promise<{ buffer: Buffer; filename: string; mimeType: string }> {
-  const game = await getGameOr404(gameId);
-  if (!game?.romFile) {
+  const item = await getItemOr404(itemId);
+  if (!item?.romFile) {
     throw new Error("ROM_NOT_FOUND");
   }
 
-  const romFullPath = resolveFromData(game.romFile.storagePath);
+  const romFullPath = resolveFromData(item.romFile.storagePath);
   const romBuffer = readFileSync(romFullPath);
-  const ext = extname(game.romFile.originalFilename) || ".bin";
+  const ext = extname(item.romFile.originalFilename) || ".bin";
 
   if (!patchId) {
     return {
       buffer: romBuffer,
-      filename: game.romFile.originalFilename,
+      filename: item.romFile.originalFilename,
       mimeType: "application/octet-stream",
     };
   }
@@ -411,13 +531,13 @@ async function getRomBuffer(
     .select()
     .from(patches)
     .where(eq(patches.id, patchId));
-  if (!patch || patch.gameId !== gameId) {
+  if (!patch || patch.itemId !== itemId) {
     throw new Error("PATCH_NOT_FOUND");
   }
 
-  const patchedFilename = patchedRomFilename(game.romFile.originalFilename, patch.name);
+  const patchedFilename = patchedRomFilename(item.romFile.originalFilename, patch.name);
 
-  const cachePath = patchedCachePath(gameId, patchId, ext);
+  const cachePath = patchedCachePath(itemId, patchId, ext);
   if (fileExists(cachePath)) {
     return {
       buffer: readFileSync(cachePath),
@@ -442,7 +562,7 @@ async function getRomBuffer(
   };
 }
 
-gameRoutes.get("/:id/rom", async (c) => {
+itemRoutes.get("/:id/rom", async (c) => {
   const id = Number(c.req.param("id"));
   const patchId = c.req.query("patchId")
     ? Number(c.req.query("patchId"))
@@ -451,7 +571,7 @@ gameRoutes.get("/:id/rom", async (c) => {
 
   try {
     const { buffer, filename, mimeType } = await getRomBuffer(id, patchId);
-    return new Response(buffer, {
+    return new Response(new Uint8Array(buffer), {
       headers: {
         "Content-Type": mimeType,
         "Content-Length": String(buffer.length),
@@ -476,22 +596,22 @@ gameRoutes.get("/:id/rom", async (c) => {
   }
 });
 
-gameRoutes.get("/:id/pack", async (c) => {
+itemRoutes.get("/:id/pack", async (c) => {
   const id = Number(c.req.param("id"));
-  const game = await getGameOr404(id);
-  if (!game) return c.json({ error: "Гру не знайдено" }, 404);
+  const item = await getItemOr404(id);
+  if (!item) return c.json({ error: "Айтем не знайдено" }, 404);
 
   const hasAssets =
-    !!game.romFile ||
-    (game.mediaAssets?.length ?? 0) > 0 ||
-    (game.patches?.length ?? 0) > 0 ||
-    (game.saves?.length ?? 0) > 0;
+    !!item.romFile ||
+    (item.mediaAssets?.length ?? 0) > 0 ||
+    (item.patches?.length ?? 0) > 0 ||
+    (item.saves?.length ?? 0) > 0;
 
   if (!hasAssets) {
     return c.json({ error: "Немає файлів для пакування" }, 404);
   }
 
-  const root = sanitizeFilenamePart(game.title) || `game-${id}`;
+  const root = sanitizeFilenamePart(item.title) || `game-${id}`;
   const packEntries: ZipEntry[] = [];
   const usedNames = new Set<string>();
 
@@ -515,12 +635,12 @@ gameRoutes.get("/:id/pack", async (c) => {
   };
 
   try {
-    if (game.romFile) {
+    if (item.romFile) {
       const rom = await getRomBuffer(id);
       add(`rom/${rom.filename}`, rom.buffer);
     }
 
-    for (const patch of game.patches ?? []) {
+    for (const patch of item.patches ?? []) {
       const patchFile = resolveFromData(patch.storagePath);
       if (!fileExists(patchFile)) continue;
       add(
@@ -528,7 +648,7 @@ gameRoutes.get("/:id/pack", async (c) => {
         readFileSync(patchFile),
       );
 
-      if (game.romFile) {
+      if (item.romFile) {
         try {
           const patched = await getRomBuffer(id, patch.id);
           add(`patched/${patched.filename}`, patched.buffer);
@@ -538,7 +658,7 @@ gameRoutes.get("/:id/pack", async (c) => {
       }
     }
 
-    for (const save of game.saves ?? []) {
+    for (const save of item.saves ?? []) {
       const saveFile = resolveFromData(save.storagePath);
       if (!fileExists(saveFile)) continue;
       add(
@@ -547,7 +667,7 @@ gameRoutes.get("/:id/pack", async (c) => {
       );
     }
 
-    for (const asset of game.mediaAssets ?? []) {
+    for (const asset of item.mediaAssets ?? []) {
       const mediaFile = resolveFromData(asset.storagePath);
       if (!fileExists(mediaFile)) continue;
       const folder =
@@ -570,7 +690,7 @@ gameRoutes.get("/:id/pack", async (c) => {
     const zip = createZip(packEntries);
     const zipName = `${root}.zip`;
 
-    return new Response(zip, {
+    return new Response(new Uint8Array(zip), {
       headers: {
         "Content-Type": "application/zip",
         "Content-Length": String(zip.length),
@@ -585,14 +705,17 @@ gameRoutes.get("/:id/pack", async (c) => {
   }
 });
 
-gameRoutes.get("/:id/play", async (c) => {
+itemRoutes.get("/:id/play", async (c) => {
   const id = Number(c.req.param("id"));
   const patchId = c.req.query("patchId");
   const saveId = c.req.query("saveId");
-  const game = await getGameOr404(id);
-  if (!game) return c.json({ error: "Гру не знайдено" }, 404);
-  if (!game.platform?.emulatorCore) {
-    return c.json({ error: "Емулятор для цієї платформи недоступний" }, 400);
+  const item = await getItemOr404(id);
+  if (!item) return c.json({ error: "Айтем не знайдено" }, 404);
+  if (!itemHasFeature(item, "emulator")) {
+    return c.json({ error: "Емулятор не підтримується для цього kind" }, 400);
+  }
+  if (!item.group?.emulatorCore) {
+    return c.json({ error: "Емулятор для цієї групи недоступний" }, 400);
   }
 
   const romQs = new URLSearchParams();
@@ -600,23 +723,26 @@ gameRoutes.get("/:id/play", async (c) => {
   const qs = romQs.toString();
 
   return c.json({
-    romUrl: `/api/games/${id}/rom${qs ? `?${qs}` : ""}`,
-    saveUrl: saveId ? `/api/games/${id}/saves/${saveId}` : null,
-    core: game.platform.emulatorCore,
-    title: game.title,
+    romUrl: `/api/items/${id}/rom${qs ? `?${qs}` : ""}`,
+    saveUrl: saveId ? `/api/items/${id}/saves/${saveId}` : null,
+    core: item.group.emulatorCore,
+    title: item.title,
   });
 });
 
-gameRoutes.get("/:id/patches", async (c) => {
+itemRoutes.get("/:id/patches", async (c) => {
   const id = Number(c.req.param("id"));
-  const list = await db.select().from(patches).where(eq(patches.gameId, id));
+  const list = await db.select().from(patches).where(eq(patches.itemId, id));
   return c.json(list);
 });
 
-gameRoutes.post("/:id/patches", async (c) => {
+itemRoutes.post("/:id/patches", async (c) => {
   const id = Number(c.req.param("id"));
-  const game = await getGameOr404(id);
-  if (!game) return c.json({ error: "Гру не знайдено" }, 404);
+  const item = await getItemOr404(id);
+  if (!item) return c.json({ error: "Айтем не знайдено" }, 404);
+  if (!itemHasFeature(item, "patches")) {
+    return c.json({ error: "Патчі не підтримуються для цього kind" }, 400);
+  }
 
   const formData = await c.req.formData();
   const file = formData.get("file");
@@ -639,7 +765,7 @@ gameRoutes.post("/:id/patches", async (c) => {
   const [created] = await db
     .insert(patches)
     .values({
-      gameId: id,
+      itemId: id,
       name: name || basename(filename, extname(filename)),
       format,
       storagePath: relativeToData(dest),
@@ -650,33 +776,36 @@ gameRoutes.post("/:id/patches", async (c) => {
   return c.json(created, 201);
 });
 
-gameRoutes.delete("/:id/patches/:patchId", async (c) => {
-  const gameId = Number(c.req.param("id"));
+itemRoutes.delete("/:id/patches/:patchId", async (c) => {
+  const itemId = Number(c.req.param("id"));
   const patchId = Number(c.req.param("patchId"));
   const [deleted] = await db
     .delete(patches)
     .where(eq(patches.id, patchId))
     .returning();
-  if (!deleted || deleted.gameId !== gameId) {
+  if (!deleted || deleted.itemId !== itemId) {
     return c.json({ error: "Патч не знайдено" }, 404);
   }
 
   deleteStoredFile(deleted.storagePath);
-  deletePatchCache(gameId, patchId);
+  deletePatchCache(itemId, patchId);
 
   return c.json({ ok: true });
 });
 
-gameRoutes.get("/:id/saves", async (c) => {
+itemRoutes.get("/:id/saves", async (c) => {
   const id = Number(c.req.param("id"));
-  const list = await db.select().from(saves).where(eq(saves.gameId, id));
+  const list = await db.select().from(saves).where(eq(saves.itemId, id));
   return c.json(list);
 });
 
-gameRoutes.post("/:id/saves", async (c) => {
+itemRoutes.post("/:id/saves", async (c) => {
   const id = Number(c.req.param("id"));
-  const game = await getGameOr404(id);
-  if (!game) return c.json({ error: "Гру не знайдено" }, 404);
+  const item = await getItemOr404(id);
+  if (!item) return c.json({ error: "Айтем не знайдено" }, 404);
+  if (!itemHasFeature(item, "saves")) {
+    return c.json({ error: "Збереження не підтримуються для цього kind" }, 400);
+  }
 
   const formData = await c.req.formData();
   const file = formData.get("file");
@@ -704,7 +833,7 @@ gameRoutes.post("/:id/saves", async (c) => {
   const [created] = await db
     .insert(saves)
     .values({
-      gameId: id,
+      itemId: id,
       name: name || basename(originalFilename, extname(originalFilename)),
       format,
       storagePath: relativeToData(dest),
@@ -716,12 +845,12 @@ gameRoutes.post("/:id/saves", async (c) => {
   return c.json(created, 201);
 });
 
-gameRoutes.get("/:id/saves/:saveId", async (c) => {
-  const gameId = Number(c.req.param("id"));
+itemRoutes.get("/:id/saves/:saveId", async (c) => {
+  const itemId = Number(c.req.param("id"));
   const saveId = Number(c.req.param("saveId"));
   const [save] = await db.select().from(saves).where(eq(saves.id, saveId));
 
-  if (!save || save.gameId !== gameId) {
+  if (!save || save.itemId !== itemId) {
     return c.json({ error: "Сейв не знайдено" }, 404);
   }
 
@@ -731,7 +860,7 @@ gameRoutes.get("/:id/saves/:saveId", async (c) => {
   }
 
   const data = readFileSync(fullPath);
-  return new Response(data, {
+  return new Response(new Uint8Array(data), {
     headers: {
       "Content-Type": "application/octet-stream",
       "Content-Length": String(data.length),
@@ -740,14 +869,14 @@ gameRoutes.get("/:id/saves/:saveId", async (c) => {
   });
 });
 
-gameRoutes.delete("/:id/saves/:saveId", async (c) => {
-  const gameId = Number(c.req.param("id"));
+itemRoutes.delete("/:id/saves/:saveId", async (c) => {
+  const itemId = Number(c.req.param("id"));
   const saveId = Number(c.req.param("saveId"));
   const [deleted] = await db
     .delete(saves)
     .where(eq(saves.id, saveId))
     .returning();
-  if (!deleted || deleted.gameId !== gameId) {
+  if (!deleted || deleted.itemId !== itemId) {
     return c.json({ error: "Сейв не знайдено" }, 404);
   }
 
@@ -755,27 +884,85 @@ gameRoutes.delete("/:id/saves/:saveId", async (c) => {
   return c.json({ ok: true });
 });
 
-gameRoutes.post("/:id/scrape", async (c) => {
+itemRoutes.post("/:id/prices/sync", async (c) => {
   const id = Number(c.req.param("id"));
-  const game = await getGameOr404(id);
-  if (!game) return c.json({ error: "Гру не знайдено" }, 404);
-  if (!game.romFile) {
+  const item = await getItemOr404(id);
+  if (!item) return c.json({ error: "Айтем не знайдено" }, 404);
+
+  const region = (item.region as Region | null) ?? null;
+  const consoleName =
+    consoleNameForGroupSlug(item.group?.slug, region) ?? item.group?.name ?? null;
+
+  try {
+    const pc = await lookupProduct({
+      title: item.title,
+      groupSlug: item.group?.slug,
+      region,
+      consoleName,
+    });
+
+    const marketPrice =
+      priceForCondition(pc, item.condition as GameCondition | null) ??
+      pc.cib ??
+      pc.loose ??
+      pc.newPrice ??
+      null;
+    const marketPriceSyncedAt = pc.syncedAt;
+    const existing = item.scrapedMetadata;
+
+    if (existing) {
+      await db
+        .update(scrapedMetadata)
+        .set({
+          pricecharting: pc,
+          marketPrice,
+          marketPriceSyncedAt,
+        })
+        .where(eq(scrapedMetadata.itemId, id));
+    } else {
+      await db.insert(scrapedMetadata).values({
+        itemId: id,
+        source: "pricecharting",
+        pricecharting: pc,
+        marketPrice,
+        marketPriceSyncedAt,
+      });
+    }
+
+    const updated = await getItemOr404(id);
+    return c.json(updated);
+  } catch (err) {
+    if (err instanceof PriceChartingError) {
+      return c.json({ error: err.message }, 400);
+    }
+    throw err;
+  }
+});
+
+itemRoutes.post("/:id/scrape", async (c) => {
+  const id = Number(c.req.param("id"));
+  const item = await getItemOr404(id);
+  if (!item) return c.json({ error: "Айтем не знайдено" }, 404);
+  if (!itemHasFeature(item, "scrape")) {
+    return c.json({ error: "Scrape не підтримується для цього kind" }, 400);
+  }
+  if (!item.romFile) {
     return c.json({ error: "Завантажте ROM для пошуку в ScreenScraper" }, 400);
   }
 
   try {
     const result = await lookupByHash(
-      game.romFile.crc32,
-      game.romFile.md5,
-      game.romFile.sha1,
-      game.platform?.shortName ?? "",
+      item.romFile.crc32,
+      item.romFile.md5,
+      item.romFile.sha1,
+      item.group?.slug ?? "",
     );
 
     if (!result) {
-      return c.json({ error: "Гру не знайдено в ScreenScraper" }, 404);
+      return c.json({ error: "Айтем не знайдено в ScreenScraper" }, 404);
     }
 
-    const existing = game.scrapedMetadata;
+    const existing = item.scrapedMetadata;
     const values = {
       source: "screenscraper",
       externalId: result.externalId,
@@ -790,20 +977,16 @@ gameRoutes.post("/:id/scrape", async (c) => {
       await db
         .update(scrapedMetadata)
         .set(values)
-        .where(eq(scrapedMetadata.gameId, id));
+        .where(eq(scrapedMetadata.itemId, id));
     } else {
-      await db.insert(scrapedMetadata).values({ gameId: id, ...values });
+      await db.insert(scrapedMetadata).values({ itemId: id, ...values });
     }
 
     if (result.genres.length > 0) {
-      const merged = normalizeGenres([...(game.genres ?? []), ...result.genres]);
-      await db
-        .update(games)
-        .set({ genres: merged, updatedAt: new Date().toISOString() })
-        .where(eq(games.id, id));
+      await attachTagNames(id, result.genres);
     }
 
-    const updated = await getGameOr404(id);
+    const updated = await getItemOr404(id);
     return c.json(updated);
   } catch (err) {
     const message = err instanceof Error ? err.message : "Помилка ScreenScraper";

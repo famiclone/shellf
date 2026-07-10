@@ -4,13 +4,14 @@ import { LuArrowLeft, LuPlus, LuSave, LuX } from "react-icons/lu";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import {
   GAME_CONDITIONS,
-  GENRE_PRESETS,
+  TAG_PRESETS,
   REGIONS,
-  normalizeGenres,
+  LEGACY_REGION_MAP,
+  normalizeTagNames,
   type GameCondition,
   type Region,
 } from "@shellf/shared";
-import { api } from "../lib/api";
+import { api, getItemTagList } from "../lib/api";
 import { EditGameAssets } from "../components/EditGameAssets";
 import { useI18n, type MessageKey } from "../lib/i18n";
 
@@ -26,50 +27,56 @@ export function EditGamePage() {
   const [purchasePrice, setPurchasePrice] = useState("");
   const [currency, setCurrency] = useState("UAH");
   const [condition, setCondition] = useState<GameCondition | "">("");
+  const [isPirate, setIsPirate] = useState(false);
   const [notes, setNotes] = useState("");
-  const [marketPrice, setMarketPrice] = useState("");
-  const [genres, setGenres] = useState<string[]>([]);
-  const [customGenre, setCustomGenre] = useState("");
+  const [tagNames, setTagNames] = useState<string[]>([]);
+  const [customTag, setCustomTag] = useState("");
   const [error, setError] = useState("");
 
   const { data: game, isLoading, error: loadError } = useQuery({
-    queryKey: ["game", gameId],
-    queryFn: () => api.getGame(gameId),
+    queryKey: ["item", gameId],
+    queryFn: () => api.getItem(gameId),
     enabled: !!gameId,
+  });
+
+  const { data: allTags } = useQuery({
+    queryKey: ["tags"],
+    queryFn: api.getTags,
   });
 
   useEffect(() => {
     if (!game) return;
     setTitle(game.title);
-    setRegion(game.region ?? "");
+    setRegion(
+      game.region
+        ? ((LEGACY_REGION_MAP[game.region] ?? game.region) as Region | "")
+        : "",
+    );
     setPurchasePrice(game.purchasePrice != null ? String(game.purchasePrice) : "");
     setCurrency(game.currency ?? "UAH");
     setCondition(game.condition ?? "");
+    setIsPirate(Boolean(game.isPirate));
     setNotes(game.notes ?? "");
-    setGenres(normalizeGenres(game.genres ?? []));
-    setMarketPrice(
-      game.scrapedMetadata?.marketPrice != null
-        ? String(game.scrapedMetadata.marketPrice)
-        : "",
-    );
+    setTagNames(normalizeTagNames(getItemTagList(game).map((t) => t.name)));
   }, [game]);
 
   const updateMutation = useMutation({
     mutationFn: () =>
-      api.updateGame(gameId, {
+      api.updateItem(gameId, {
         title,
         region: region || null,
         purchasePrice: purchasePrice ? Number(purchasePrice) : null,
         currency,
         condition: condition || null,
+        isPirate,
         notes: notes || null,
-        genres: normalizeGenres(genres),
-        marketPrice: marketPrice ? Number(marketPrice) : null,
+        tags: normalizeTagNames(tagNames),
       }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["game", gameId] });
-      queryClient.invalidateQueries({ queryKey: ["games"] });
-      navigate(`/games/${gameId}`);
+      queryClient.invalidateQueries({ queryKey: ["item", gameId] });
+      queryClient.invalidateQueries({ queryKey: ["items"] });
+      queryClient.invalidateQueries({ queryKey: ["tags"] });
+      navigate(`/items/${gameId}`);
     },
     onError: (err) => setError((err as Error).message),
   });
@@ -93,27 +100,34 @@ export function EditGamePage() {
     updateMutation.mutate();
   }
 
-  function toggleGenre(tag: string) {
-    setGenres((prev) => {
+  function toggleTag(tag: string) {
+    setTagNames((prev) => {
       const key = tag.toLowerCase();
       const exists = prev.some((g) => g.toLowerCase() === key);
       if (exists) return prev.filter((g) => g.toLowerCase() !== key);
-      return normalizeGenres([...prev, tag]);
+      return normalizeTagNames([...prev, tag]);
     });
   }
 
-  function addCustomGenre() {
-    const next = normalizeGenres([...genres, customGenre]);
-    setGenres(next);
-    setCustomGenre("");
+  function addCustomTag() {
+    const next = normalizeTagNames([...tagNames, customTag]);
+    setTagNames(next);
+    setCustomTag("");
   }
 
-  const selectedKeys = new Set(genres.map((g) => g.toLowerCase()));
+  const selectedKeys = new Set(tagNames.map((g) => g.toLowerCase()));
+  const suggestionNames = [
+    ...TAG_PRESETS,
+    ...(allTags ?? []).map((t) => t.name),
+  ].filter(
+    (name, index, arr) =>
+      arr.findIndex((n) => n.toLowerCase() === name.toLowerCase()) === index,
+  );
 
   return (
     <div>
       <header className="page-header">
-        <Link to={`/games/${gameId}`} className="with-icon" style={{ fontSize: "0.875rem" }}>
+        <Link to={`/items/${gameId}`} className="with-icon" style={{ fontSize: "0.875rem" }}>
           <LuArrowLeft aria-hidden />
           {game.title}
         </Link>
@@ -127,7 +141,7 @@ export function EditGamePage() {
         </div>
         <div className="form-group">
           <label>{t("editGame.platformLabel")}</label>
-          <input value={game.platform?.name ?? ""} disabled />
+          <input value={game.group?.name ?? ""} disabled />
         </div>
         <div className="form-group">
           <label>{t("editGame.region")}</label>
@@ -162,15 +176,6 @@ export function EditGamePage() {
           </div>
         </div>
         <div className="form-group">
-          <label>{t("editGame.marketPrice")}</label>
-          <input
-            type="number"
-            value={marketPrice}
-            onChange={(e) => setMarketPrice(e.target.value)}
-            placeholder="0"
-          />
-        </div>
-        <div className="form-group">
           <label>{t("editGame.condition")}</label>
           <select
             value={condition}
@@ -185,12 +190,22 @@ export function EditGamePage() {
           </select>
         </div>
         <div className="form-group">
-          <label>{t("editGame.genres")}</label>
+          <label className="checkbox-label">
+            <input
+              type="checkbox"
+              checked={isPirate}
+              onChange={(e) => setIsPirate(e.target.checked)}
+            />
+            {t("editGame.isPirate")}
+          </label>
+        </div>
+        <div className="form-group">
+          <label>{t("editGame.tags")}</label>
           <p className="settings-hint" style={{ marginBottom: "0.65rem" }}>
-            {t("editGame.genresHint")}
+            {t("editGame.tagsHint")}
           </p>
           <div className="genre-chip-row">
-            {GENRE_PRESETS.map((preset) => {
+            {suggestionNames.map((preset) => {
               const active = selectedKeys.has(preset.toLowerCase());
               return (
                 <button
@@ -198,23 +213,27 @@ export function EditGamePage() {
                   type="button"
                   className={`genre-chip ${active ? "active" : ""}`}
                   aria-pressed={active}
-                  onClick={() => toggleGenre(preset)}
+                  onClick={() => toggleTag(preset)}
                 >
                   {preset}
                 </button>
               );
             })}
           </div>
-          {genres.some((g) => !GENRE_PRESETS.some((p) => p.toLowerCase() === g.toLowerCase())) && (
+          {tagNames.some(
+            (g) => !suggestionNames.some((p) => p.toLowerCase() === g.toLowerCase()),
+          ) && (
             <div className="genre-chip-row" style={{ marginTop: "0.5rem" }}>
-              {genres
-                .filter((g) => !GENRE_PRESETS.some((p) => p.toLowerCase() === g.toLowerCase()))
+              {tagNames
+                .filter(
+                  (g) => !suggestionNames.some((p) => p.toLowerCase() === g.toLowerCase()),
+                )
                 .map((tag) => (
                   <button
                     key={tag}
                     type="button"
                     className="genre-chip active with-icon"
-                    onClick={() => toggleGenre(tag)}
+                    onClick={() => toggleTag(tag)}
                   >
                     {tag}
                     <LuX aria-hidden />
@@ -224,21 +243,21 @@ export function EditGamePage() {
           )}
           <div className="genre-add-row">
             <input
-              value={customGenre}
-              onChange={(e) => setCustomGenre(e.target.value)}
-              placeholder={t("editGame.genresAdd")}
+              value={customTag}
+              onChange={(e) => setCustomTag(e.target.value)}
+              placeholder={t("editGame.tagsAdd")}
               onKeyDown={(e) => {
                 if (e.key === "Enter") {
                   e.preventDefault();
-                  addCustomGenre();
+                  addCustomTag();
                 }
               }}
             />
             <button
               type="button"
               className="btn-secondary with-icon"
-              onClick={addCustomGenre}
-              disabled={!customGenre.trim()}
+              onClick={addCustomTag}
+              disabled={!customTag.trim()}
             >
               <LuPlus aria-hidden />
               {t("common.add")}
@@ -254,7 +273,7 @@ export function EditGamePage() {
             <LuSave aria-hidden />
             {updateMutation.isPending ? t("common.saving") : t("common.save")}
           </button>
-          <Link to={`/games/${gameId}`} className="btn-secondary">
+          <Link to={`/items/${gameId}`} className="btn-secondary">
             {t("common.cancel")}
           </Link>
         </div>

@@ -5,6 +5,7 @@ import {
   LuLayers,
   LuPlus,
   LuSettings,
+  LuTags,
 } from "react-icons/lu";
 import { Link, Outlet, useLocation } from "react-router-dom";
 import { useI18n } from "../lib/i18n";
@@ -18,8 +19,9 @@ export function Layout() {
 
   const nav = [
     { to: "/", label: t("nav.home"), icon: LuHouse },
-    { to: "/platforms", label: t("nav.platforms"), icon: LuLayers },
-    { to: "/games/new", label: t("nav.addGame"), icon: LuPlus },
+    { to: "/groups", label: t("nav.platforms"), icon: LuLayers },
+    { to: "/items", label: t("nav.items"), icon: LuTags, end: false },
+    { to: "/items/new", label: t("nav.addGame"), icon: LuPlus },
   ];
 
   return (
@@ -35,16 +37,16 @@ export function Layout() {
           <nav>
             {nav.map((item) => {
               const Icon = item.icon;
+              const active =
+                item.to === "/items"
+                  ? location.pathname === "/items"
+                  : location.pathname === item.to ||
+                    (item.to !== "/" && location.pathname.startsWith(item.to));
               return (
                 <Link
                   key={item.to}
                   to={item.to}
-                  className={
-                    location.pathname === item.to ||
-                    (item.to !== "/" && location.pathname.startsWith(item.to))
-                      ? "nav-link active"
-                      : "nav-link"
-                  }
+                  className={active ? "nav-link active" : "nav-link"}
                 >
                   <Icon aria-hidden />
                   {item.label}

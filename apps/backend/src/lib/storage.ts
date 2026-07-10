@@ -20,24 +20,24 @@ export function ensureDataDirs() {
   }
 }
 
-export function romPath(platformId: number, gameId: number, filename: string) {
-  return join(paths.roms, String(platformId), String(gameId), filename);
+export function romPath(groupId: number, itemId: number, filename: string) {
+  return join(paths.roms, String(groupId), String(itemId), filename);
 }
 
-export function mediaPath(gameId: number, filename: string) {
-  return join(paths.media, String(gameId), filename);
+export function mediaPath(itemId: number, filename: string) {
+  return join(paths.media, String(itemId), filename);
 }
 
-export function patchPath(gameId: number, filename: string) {
-  return join(paths.patches, String(gameId), filename);
+export function patchPath(itemId: number, filename: string) {
+  return join(paths.patches, String(itemId), filename);
 }
 
-export function savePath(gameId: number, filename: string) {
-  return join(paths.saves, String(gameId), filename);
+export function savePath(itemId: number, filename: string) {
+  return join(paths.saves, String(itemId), filename);
 }
 
-export function patchedCachePath(gameId: number, patchId: number, ext: string) {
-  return join(paths.cache, String(gameId), `${patchId}${ext}`);
+export function patchedCachePath(itemId: number, patchId: number, ext: string) {
+  return join(paths.cache, String(itemId), `${patchId}${ext}`);
 }
 
 export function ensureParentDir(filePath: string) {
@@ -79,12 +79,12 @@ export function deleteStoredFile(relativePath: string) {
   safeUnlink(resolveFromData(relativePath));
 }
 
-export function clearPatchedCache(gameId: number) {
-  safeRmDir(join(paths.cache, String(gameId)));
+export function clearPatchedCache(itemId: number) {
+  safeRmDir(join(paths.cache, String(itemId)));
 }
 
-export function deletePatchCache(gameId: number, patchId: number) {
-  const dir = join(paths.cache, String(gameId));
+export function deletePatchCache(itemId: number, patchId: number) {
+  const dir = join(paths.cache, String(itemId));
   if (!existsSync(dir)) return;
   for (const name of readdirSync(dir)) {
     if (name.startsWith(String(patchId))) {
@@ -93,33 +93,36 @@ export function deletePatchCache(gameId: number, patchId: number) {
   }
 }
 
-export function deleteGameFiles(game: {
+export function deleteItemFiles(item: {
   id: number;
-  platformId: number;
+  groupId: number;
   romFile?: { storagePath: string } | null;
   mediaAssets?: { storagePath: string }[];
   patches?: { storagePath: string }[];
   saves?: { storagePath: string }[];
 }) {
-  if (game.romFile) {
-    safeUnlink(resolveFromData(game.romFile.storagePath));
+  if (item.romFile) {
+    safeUnlink(resolveFromData(item.romFile.storagePath));
   }
 
-  for (const asset of game.mediaAssets ?? []) {
+  for (const asset of item.mediaAssets ?? []) {
     safeUnlink(resolveFromData(asset.storagePath));
   }
 
-  for (const patch of game.patches ?? []) {
+  for (const patch of item.patches ?? []) {
     safeUnlink(resolveFromData(patch.storagePath));
   }
 
-  for (const save of game.saves ?? []) {
+  for (const save of item.saves ?? []) {
     safeUnlink(resolveFromData(save.storagePath));
   }
 
-  safeRmDir(join(paths.media, String(game.id)));
-  safeRmDir(join(paths.patches, String(game.id)));
-  safeRmDir(join(paths.cache, String(game.id)));
-  safeRmDir(join(paths.saves, String(game.id)));
-  safeRmDir(join(paths.roms, String(game.platformId), String(game.id)));
+  safeRmDir(join(paths.media, String(item.id)));
+  safeRmDir(join(paths.patches, String(item.id)));
+  safeRmDir(join(paths.cache, String(item.id)));
+  safeRmDir(join(paths.saves, String(item.id)));
+  safeRmDir(join(paths.roms, String(item.groupId), String(item.id)));
 }
+
+/** @deprecated Use deleteItemFiles */
+export const deleteGameFiles = deleteItemFiles;

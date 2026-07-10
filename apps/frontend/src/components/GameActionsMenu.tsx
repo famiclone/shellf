@@ -8,15 +8,19 @@ import { useI18n } from "../lib/i18n";
 
 interface GameActionsMenuProps {
   gameId: number;
-  platformId: number;
+  groupId: number;
+  /** @deprecated Use groupId */
+  platformId?: number;
   gameTitle: string;
 }
 
 export function GameActionsMenu({
   gameId,
+  groupId,
   platformId,
   gameTitle,
 }: GameActionsMenuProps) {
+  const resolvedGroupId = groupId ?? platformId!;
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const menuRef = useRef<HTMLDivElement>(null);
@@ -45,12 +49,13 @@ export function GameActionsMenu({
   }, [confirmOpen]);
 
   const deleteMutation = useMutation({
-    mutationFn: () => api.deleteGame(gameId),
+    mutationFn: () => api.deleteItem(gameId),
     onSuccess: () => {
       setConfirmOpen(false);
-      queryClient.invalidateQueries({ queryKey: ["games"] });
+      queryClient.invalidateQueries({ queryKey: ["items"] });
+      queryClient.invalidateQueries({ queryKey: ["groups"] });
       queryClient.invalidateQueries({ queryKey: ["dashboard"] });
-      navigate(`/platforms/${platformId}`);
+      navigate(`/groups/${resolvedGroupId}`);
     },
   });
 
@@ -134,7 +139,7 @@ export function GameActionsMenu({
               className="action-menu-item"
               onClick={() => {
                 setOpen(false);
-                navigate(`/games/${gameId}/edit`);
+                navigate(`/items/${gameId}/edit`);
               }}
             >
               <LuPencil aria-hidden />

@@ -1,7 +1,19 @@
 import type {
+  CreateGroupInput,
+  CreateItemInput,
+  CreateKindInput,
+  CreateTagInput,
   DashboardStats,
   Game,
+  Group,
+  Item,
+  Kind,
   Platform,
+  PublicAppSettings,
+  Tag,
+  UpdateAppSettingsInput,
+  UpdateGroupInput,
+  UpdateItemInput,
 } from "@shellf/shared";
 
 const API_BASE = "/api";
@@ -17,75 +29,128 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const api = {
-  getPlatforms: () => request<Platform[]>("/platforms"),
-  getPlatform: (id: number) => request<Platform>(`/platforms/${id}`),
-  getDashboard: () => request<DashboardStats>("/platforms/stats/dashboard"),
-  getGames: (params?: { platformId?: number; search?: string }) => {
-    const q = new URLSearchParams();
-    if (params?.platformId) q.set("platformId", String(params.platformId));
-    if (params?.search) q.set("search", params.search);
-    const qs = q.toString();
-    return request<Game[]>(`/games${qs ? `?${qs}` : ""}`);
-  },
-  getGame: (id: number) => request<Game>(`/games/${id}`),
-  createGame: (data: Record<string, unknown>) =>
-    request<Game>("/games", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(data),
-    }),
-  updateGame: (id: number, data: Record<string, unknown>) =>
-    request<Game>(`/games/${id}`, {
+  getSettings: () => request<PublicAppSettings>("/settings"),
+  updateSettings: (data: UpdateAppSettingsInput) =>
+    request<PublicAppSettings>("/settings", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(data),
     }),
-  deleteGame: (id: number) =>
-    request<{ ok: boolean }>(`/games/${id}`, { method: "DELETE" }),
+
+  getKinds: () => request<Kind[]>("/kinds"),
+  createKind: (data: CreateKindInput) =>
+    request<Kind>("/kinds", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    }),
+
+  getGroups: (params?: { kindId?: number }) => {
+    const q = new URLSearchParams();
+    if (params?.kindId) q.set("kindId", String(params.kindId));
+    const qs = q.toString();
+    return request<Group[]>(`/groups${qs ? `?${qs}` : ""}`);
+  },
+  getGroup: (id: number) => request<Group>(`/groups/${id}`),
+  createGroup: (data: CreateGroupInput) =>
+    request<Group>("/groups", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    }),
+  updateGroup: (id: number, data: UpdateGroupInput) =>
+    request<Group>(`/groups/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    }),
+  getDashboard: () => request<DashboardStats>("/groups/stats/dashboard"),
+
+  getTags: () => request<Tag[]>("/tags"),
+  createTag: (data: CreateTagInput) =>
+    request<Tag>("/tags", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    }),
+  deleteTag: (id: number) =>
+    request<{ ok: boolean }>(`/tags/${id}`, { method: "DELETE" }),
+
+  getItems: (params?: {
+    groupId?: number;
+    platformId?: number;
+    search?: string;
+    tag?: string;
+    tagId?: number;
+  }) => {
+    const q = new URLSearchParams();
+    const groupId = params?.groupId ?? params?.platformId;
+    if (groupId) q.set("groupId", String(groupId));
+    if (params?.search) q.set("search", params.search);
+    if (params?.tag) q.set("tag", params.tag);
+    if (params?.tagId) q.set("tagId", String(params.tagId));
+    const qs = q.toString();
+    return request<Item[]>(`/items${qs ? `?${qs}` : ""}`);
+  },
+  getItem: (id: number) => request<Item>(`/items/${id}`),
+  createItem: (data: CreateItemInput | Record<string, unknown>) =>
+    request<Item>("/items", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    }),
+  updateItem: (id: number, data: UpdateItemInput | Record<string, unknown>) =>
+    request<Item>(`/items/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    }),
+  deleteItem: (id: number) =>
+    request<{ ok: boolean }>(`/items/${id}`, { method: "DELETE" }),
   deleteRom: (id: number) =>
-    request<{ ok: boolean }>(`/games/${id}/rom`, { method: "DELETE" }),
+    request<{ ok: boolean }>(`/items/${id}/rom`, { method: "DELETE" }),
   uploadRom: (id: number, file: File) => {
     const fd = new FormData();
     fd.append("file", file);
-    return request<Game>(`/games/${id}/rom`, { method: "POST", body: fd });
+    return request<Item>(`/items/${id}/rom`, { method: "POST", body: fd });
   },
   uploadMedia: (id: number, file: File, type: string, replace?: boolean) => {
     const fd = new FormData();
     fd.append("file", file);
     fd.append("type", type);
     const qs = replace ? "?replace=true" : "";
-    return request<unknown>(`/games/${id}/media${qs}`, { method: "POST", body: fd });
+    return request<unknown>(`/items/${id}/media${qs}`, { method: "POST", body: fd });
   },
-  deleteMedia: (gameId: number, assetId: number) =>
-    request<{ ok: boolean }>(`/games/${gameId}/media/${assetId}`, {
+  deleteMedia: (itemId: number, assetId: number) =>
+    request<{ ok: boolean }>(`/items/${itemId}/media/${assetId}`, {
       method: "DELETE",
     }),
-  getMediaUrl: (gameId: number, assetId: number) =>
-    `/api/games/${gameId}/media/${assetId}`,
+  getMediaUrl: (itemId: number, assetId: number) =>
+    `/api/items/${itemId}/media/${assetId}`,
   getRomDownloadUrl: (id: number, patchId?: number, inline?: boolean) => {
     const q = new URLSearchParams();
     if (patchId) q.set("patchId", String(patchId));
     if (inline) q.set("inline", "1");
     const qs = q.toString();
-    return `/api/games/${id}/rom${qs ? `?${qs}` : ""}`;
+    return `/api/items/${id}/rom${qs ? `?${qs}` : ""}`;
   },
-  getPackDownloadUrl: (id: number) => `/api/games/${id}/pack`,
+  getPackDownloadUrl: (id: number) => `/api/items/${id}/pack`,
   getPlayInfo: (id: number, patchId?: number) =>
     request<{ romUrl: string; core: string; title: string }>(
-      `/games/${id}/play${patchId ? `?patchId=${patchId}` : ""}`,
+      `/items/${id}/play${patchId ? `?patchId=${patchId}` : ""}`,
     ),
   getPatches: (id: number) =>
     request<Array<{ id: number; name: string; format: string }>>(
-      `/games/${id}/patches`,
+      `/items/${id}/patches`,
     ),
   uploadPatch: (id: number, file: File, name?: string) => {
     const fd = new FormData();
     fd.append("file", file);
     if (name) fd.append("name", name);
-    return request<unknown>(`/games/${id}/patches`, { method: "POST", body: fd });
+    return request<unknown>(`/items/${id}/patches`, { method: "POST", body: fd });
   },
-  deletePatch: (gameId: number, patchId: number) =>
-    request<{ ok: boolean }>(`/games/${gameId}/patches/${patchId}`, {
+  deletePatch: (itemId: number, patchId: number) =>
+    request<{ ok: boolean }>(`/items/${itemId}/patches/${patchId}`, {
       method: "DELETE",
     }),
   getSaves: (id: number) =>
@@ -97,26 +162,58 @@ export const api = {
         originalFilename: string;
         size: number;
       }>
-    >(`/games/${id}/saves`),
+    >(`/items/${id}/saves`),
   uploadSave: (id: number, file: File, name?: string) => {
     const fd = new FormData();
     fd.append("file", file);
     if (name) fd.append("name", name);
-    return request<unknown>(`/games/${id}/saves`, { method: "POST", body: fd });
+    return request<unknown>(`/items/${id}/saves`, { method: "POST", body: fd });
   },
-  deleteSave: (gameId: number, saveId: number) =>
-    request<{ ok: boolean }>(`/games/${gameId}/saves/${saveId}`, {
+  deleteSave: (itemId: number, saveId: number) =>
+    request<{ ok: boolean }>(`/items/${itemId}/saves/${saveId}`, {
       method: "DELETE",
     }),
-  getSaveDownloadUrl: (gameId: number, saveId: number) =>
-    `/api/games/${gameId}/saves/${saveId}`,
-  scrapeGame: (id: number) =>
-    request<Game>(`/games/${id}/scrape`, { method: "POST" }),
+  getSaveDownloadUrl: (itemId: number, saveId: number) =>
+    `/api/items/${itemId}/saves/${saveId}`,
+  scrapeItem: (id: number) =>
+    request<Item>(`/items/${id}/scrape`, { method: "POST" }),
+  syncItemPrices: (id: number) =>
+    request<Item>(`/items/${id}/prices/sync`, { method: "POST" }),
+
+  /** @deprecated Use getGroups */
+  getPlatforms: () => api.getGroups() as Promise<Platform[]>,
+  /** @deprecated Use getGroup */
+  getPlatform: (id: number) => api.getGroup(id) as Promise<Platform>,
+  /** @deprecated Use getItems */
+  getGames: (params?: { platformId?: number; groupId?: number; search?: string }) =>
+    api.getItems(params) as Promise<Game[]>,
+  /** @deprecated Use getItem */
+  getGame: (id: number) => api.getItem(id) as Promise<Game>,
+  /** @deprecated Use createItem */
+  createGame: (data: Record<string, unknown>) =>
+    api.createItem(data) as Promise<Game>,
+  /** @deprecated Use updateItem */
+  updateGame: (id: number, data: Record<string, unknown>) =>
+    api.updateItem(id, data) as Promise<Game>,
+  /** @deprecated Use deleteItem */
+  deleteGame: (id: number) => api.deleteItem(id),
+  /** @deprecated Use scrapeItem */
+  scrapeGame: (id: number) => api.scrapeItem(id) as Promise<Game>,
 };
 
-export function getGameCover(game: Game): string | null {
-  const box = game.mediaAssets?.find((m) => m.type === "box");
-  if (box) return api.getMediaUrl(game.id, box.id);
-  if (game.scrapedMetadata?.coverUrl) return game.scrapedMetadata.coverUrl;
+export function getItemCover(item: Item | Game): string | null {
+  const box = item.mediaAssets?.find((m) => m.type === "box");
+  if (box) return api.getMediaUrl(item.id, box.id);
+  if (item.scrapedMetadata?.coverUrl) return item.scrapedMetadata.coverUrl;
   return null;
 }
+
+export function getItemTagList(item: Item | Game): Array<{ name: string; slug?: string }> {
+  if (item.tags?.length) {
+    return item.tags.map((t) => ({ name: t.name, slug: t.slug }));
+  }
+  return (item.genres ?? []).map((name) => ({ name }));
+}
+
+/** @deprecated Use getItemCover */
+export const getGameCover = getItemCover;

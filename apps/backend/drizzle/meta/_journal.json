@@ -22,6 +22,48 @@
       "when": 1783680000000,
       "tag": "0002_genres",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1783690000000,
+      "tag": "0003_app_settings",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1783700000000,
+      "tag": "0004_regions_video_standards",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1783710000000,
+      "tag": "0005_is_pirate",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1783720000000,
+      "tag": "0006_items_groups_kinds",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "6",
+      "when": 1783730000000,
+      "tag": "0007_pricecharting",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1783740000000,
+      "tag": "0008_tags",
+      "breakpoints": true
     }
   ]
 }
