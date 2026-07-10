@@ -19,7 +19,41 @@ export interface ScreenScraperResult {
   title: string | null;
   description: string | null;
   coverUrl: string | null;
+  genres: string[];
   rawPayload: Record<string, unknown>;
+}
+
+function parseGenres(jeu: Record<string, unknown>): string[] {
+  const genres = jeu.genres as
+    | Array<{
+        id?: string | number;
+        noms?: Array<{ langue?: string; text?: string }>;
+        nom_en?: string;
+        nom_fr?: string;
+      }>
+    | undefined;
+  if (!Array.isArray(genres)) return [];
+
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const g of genres) {
+    const noms = g.noms ?? [];
+    const text =
+      noms.find((n) => n.langue === "en")?.text ??
+      noms.find((n) => n.langue === "wor")?.text ??
+      noms[0]?.text ??
+      g.nom_en ??
+      g.nom_fr ??
+      null;
+    if (!text) continue;
+    const tag = text.trim();
+    if (!tag) continue;
+    const key = tag.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(tag);
+  }
+  return out;
 }
 
 export async function lookupByHash(
@@ -76,6 +110,7 @@ export async function lookupByHash(
       title,
       description,
       coverUrl,
+      genres: parseGenres(jeu),
       rawPayload: jeu as Record<string, unknown>,
     };
   }

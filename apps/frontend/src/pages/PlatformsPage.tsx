@@ -1,21 +1,23 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import { api } from "../lib/api";
+import { useI18n } from "../lib/i18n";
 
 export function PlatformsPage() {
+  const { t } = useI18n();
   const { data, isLoading, error } = useQuery({
     queryKey: ["platforms"],
     queryFn: api.getPlatforms,
   });
 
-  if (isLoading) return <p>Завантаження...</p>;
+  if (isLoading) return <p>{t("common.loading")}</p>;
   if (error) return <p className="error">{(error as Error).message}</p>;
 
   return (
     <div>
       <header className="page-header">
-        <h1>Платформи</h1>
-        <p>Оберіть платформу для перегляду колекції</p>
+        <h1>{t("platforms.title")}</h1>
+        <p>{t("platforms.subtitle")}</p>
       </header>
 
       <div className="grid grid-2">
@@ -29,7 +31,7 @@ export function PlatformsPage() {
             <div className="count">
               <span className="badge">{platform.shortName}</span>
               {" · "}
-              {platform.gameCount ?? 0} ігор
+              {t("platforms.gameMany", { count: platform.gameCount ?? 0 })}
             </div>
           </Link>
         ))}

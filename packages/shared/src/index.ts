@@ -21,8 +21,17 @@ export const GAME_CONDITION_LABELS: Record<GameCondition, string> = {
 export const MEDIA_TYPES = ["box", "manual", "photo"] as const;
 export type MediaType = (typeof MEDIA_TYPES)[number];
 
+export const MEDIA_TYPE_LABELS: Record<MediaType, string> = {
+  box: "Обкладинка",
+  manual: "Мануал",
+  photo: "Фото",
+};
+
 export const PATCH_FORMATS = ["ips", "bps"] as const;
 export type PatchFormat = (typeof PATCH_FORMATS)[number];
+
+export const SAVE_FORMATS = ["sram"] as const;
+export type SaveFormat = (typeof SAVE_FORMATS)[number];
 
 export const REGIONS = ["JP", "US", "EU", "AU", "KR", "CN", "OTHER"] as const;
 export type Region = (typeof REGIONS)[number];
@@ -36,6 +45,40 @@ export const REGION_LABELS: Record<Region, string> = {
   CN: "Китай",
   OTHER: "Інше",
 };
+
+export const GENRE_PRESETS = [
+  "Action",
+  "Adventure",
+  "Platformer",
+  "RPG",
+  "Shooter",
+  "Puzzle",
+  "Sports",
+  "Racing",
+  "Fighting",
+  "Strategy",
+  "Simulation",
+  "Horror",
+] as const;
+
+export type GenrePreset = (typeof GENRE_PRESETS)[number];
+
+/** Trim, drop empties, dedupe case-insensitively (keeps first casing). */
+export function normalizeGenres(genres: string[] | null | undefined): string[] {
+  if (!genres?.length) return [];
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const raw of genres) {
+    const tag = raw.trim().replace(/\s+/g, " ");
+    if (!tag) continue;
+    const key = tag.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(tag);
+    if (out.length >= 20) break;
+  }
+  return out;
+}
 
 export const DEFAULT_PLATFORMS = [
   { name: "Nintendo Entertainment System", shortName: "nes", emulatorCore: "nes" },
@@ -63,6 +106,7 @@ export const createGameSchema = z.object({
   currency: z.string().max(8).optional().nullable(),
   condition: z.enum(GAME_CONDITIONS).optional().nullable(),
   notes: z.string().optional().nullable(),
+  genres: z.array(z.string().min(1)).max(20).optional().nullable(),
   customMeta: z.record(z.unknown()).optional().nullable(),
 });
 
@@ -115,6 +159,16 @@ export interface Patch {
   originalFilename: string;
 }
 
+export interface Save {
+  id: number;
+  gameId: number;
+  name: string;
+  format: SaveFormat;
+  storagePath: string;
+  originalFilename: string;
+  size: number;
+}
+
 export interface ScrapedMetadata {
   id: number;
   gameId: number;
@@ -138,6 +192,7 @@ export interface Game {
   currency: string | null;
   condition: GameCondition | null;
   notes: string | null;
+  genres: string[];
   customMeta: Record<string, unknown> | null;
   createdAt: string;
   updatedAt: string;
@@ -145,6 +200,7 @@ export interface Game {
   romFile?: RomFile | null;
   mediaAssets?: MediaAsset[];
   patches?: Patch[];
+  saves?: Save[];
   scrapedMetadata?: ScrapedMetadata | null;
 }
 

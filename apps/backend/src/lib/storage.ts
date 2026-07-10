@@ -1,5 +1,5 @@
 import { join, dirname } from "node:path";
-import { mkdirSync, existsSync } from "node:fs";
+import { mkdirSync, existsSync, rmSync, unlinkSync, readdirSync } from "node:fs";
 import { DATA_DIR } from "../lib/config";
 
 const DATA_DIR_ENV = process.env.DATA_DIR ?? DATA_DIR;
@@ -11,6 +11,7 @@ export const paths = {
   patches: join(DATA_DIR_ENV, "patches"),
   cache: join(DATA_DIR_ENV, "cache", "patched"),
   scrapedCovers: join(DATA_DIR_ENV, "cache", "covers"),
+  saves: join(DATA_DIR_ENV, "saves"),
 };
 
 export function ensureDataDirs() {
@@ -29,6 +30,10 @@ export function mediaPath(gameId: number, filename: string) {
 
 export function patchPath(gameId: number, filename: string) {
   return join(paths.patches, String(gameId), filename);
+}
+
+export function savePath(gameId: number, filename: string) {
+  return join(paths.saves, String(gameId), filename);
 }
 
 export function patchedCachePath(gameId: number, patchId: number, ext: string) {
@@ -52,4 +57,69 @@ export function resolveFromData(relativePath: string) {
 
 export function fileExists(path: string) {
   return existsSync(path);
+}
+
+function safeUnlink(path: string) {
+  try {
+    if (existsSync(path)) unlinkSync(path);
+  } catch {
+    // ignore missing or locked files
+  }
+}
+
+function safeRmDir(path: string) {
+  try {
+    if (existsSync(path)) rmSync(path, { recursive: true, force: true });
+  } catch {
+    // ignore missing or locked directories
+  }
+}
+
+export function deleteStoredFile(relativePath: string) {
+  safeUnlink(resolveFromData(relativePath));
+}
+
+export function clearPatchedCache(gameId: number) {
+  safeRmDir(join(paths.cache, String(gameId)));
+}
+
+export function deletePatchCache(gameId: number, patchId: number) {
+  const dir = join(paths.cache, String(gameId));
+  if (!existsSync(dir)) return;
+  for (const name of readdirSync(dir)) {
+    if (name.startsWith(String(patchId))) {
+      safeUnlink(join(dir, name));
+    }
+  }
+}
+
+export function deleteGameFiles(game: {
+  id: number;
+  platformId: number;
+  romFile?: { storagePath: string } | null;
+  mediaAssets?: { storagePath: string }[];
+  patches?: { storagePath: string }[];
+  saves?: { storagePath: string }[];
+}) {
+  if (game.romFile) {
+    safeUnlink(resolveFromData(game.romFile.storagePath));
+  }
+
+  for (const asset of game.mediaAssets ?? []) {
+    safeUnlink(resolveFromData(asset.storagePath));
+  }
+
+  for (const patch of game.patches ?? []) {
+    safeUnlink(resolveFromData(patch.storagePath));
+  }
+
+  for (const save of game.saves ?? []) {
+    safeUnlink(resolveFromData(save.storagePath));
+  }
+
+  safeRmDir(join(paths.media, String(game.id)));
+  safeRmDir(join(paths.patches, String(game.id)));
+  safeRmDir(join(paths.cache, String(game.id)));
+  safeRmDir(join(paths.saves, String(game.id)));
+  safeRmDir(join(paths.roms, String(game.platformId), String(game.id)));
 }

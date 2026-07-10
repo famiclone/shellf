@@ -3,18 +3,16 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   GAME_CONDITIONS,
-  GAME_CONDITION_LABELS,
   REGIONS,
-  REGION_LABELS,
   type GameCondition,
   type Region,
 } from "@shellf/shared";
 import { api } from "../lib/api";
-
-const STEPS = ["Платформа", "ROM", "Медіа", "Метадані"] as const;
+import { useI18n, type MessageKey } from "../lib/i18n";
 
 export function AddGamePage() {
   const navigate = useNavigate();
+  const { t } = useI18n();
   const [step, setStep] = useState(0);
   const [gameId, setGameId] = useState<number | null>(null);
   const [title, setTitle] = useState("");
@@ -25,6 +23,13 @@ export function AddGamePage() {
   const [condition, setCondition] = useState<GameCondition | "">("");
   const [notes, setNotes] = useState("");
   const [error, setError] = useState("");
+
+  const steps = [
+    t("addGame.step.platform"),
+    t("addGame.step.rom"),
+    t("addGame.step.media"),
+    t("addGame.step.metadata"),
+  ] as const;
 
   const { data: platforms } = useQuery({
     queryKey: ["platforms"],
@@ -79,7 +84,7 @@ export function AddGamePage() {
 
   function handleStep0() {
     if (!title || !platformId) {
-      setError("Вкажіть назву та платформу");
+      setError(t("addGame.errorTitlePlatform"));
       return;
     }
     createMutation.mutate({
@@ -96,12 +101,12 @@ export function AddGamePage() {
   return (
     <div>
       <header className="page-header">
-        <h1>Додати гру</h1>
-        <p>Оцифруйте нову покупку в колекцію</p>
+        <h1>{t("addGame.title")}</h1>
+        <p>{t("addGame.subtitle")}</p>
       </header>
 
       <div className="wizard-steps">
-        {STEPS.map((label, i) => (
+        {steps.map((label, i) => (
           <span
             key={label}
             className={`wizard-step ${i === step ? "active" : ""} ${i < step ? "done" : ""}`}
@@ -115,16 +120,16 @@ export function AddGamePage() {
         {step === 0 && (
           <>
             <div className="form-group">
-              <label>Назва гри</label>
+              <label>{t("addGame.titleLabel")}</label>
               <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Contra" />
             </div>
             <div className="form-group">
-              <label>Платформа</label>
+              <label>{t("addGame.platformLabel")}</label>
               <select
                 value={platformId}
                 onChange={(e) => setPlatformId(e.target.value ? Number(e.target.value) : "")}
               >
-                <option value="">Оберіть платформу</option>
+                <option value="">{t("addGame.selectPlatform")}</option>
                 {platforms?.map((p) => (
                   <option key={p.id} value={p.id}>
                     {p.name}
@@ -133,7 +138,7 @@ export function AddGamePage() {
               </select>
             </div>
             <button className="btn-primary" onClick={handleStep0} disabled={createMutation.isPending}>
-              {createMutation.isPending ? "Створення..." : "Далі"}
+              {createMutation.isPending ? t("addGame.creating") : t("common.next")}
             </button>
           </>
         )}
@@ -141,7 +146,7 @@ export function AddGamePage() {
         {step === 1 && gameId && (
           <>
             <div className="form-group">
-              <label>ROM файл (дамп)</label>
+              <label>{t("addGame.romLabel")}</label>
               <input
                 type="file"
                 onChange={(e) => {
@@ -152,7 +157,7 @@ export function AddGamePage() {
             </div>
             <div className="actions">
               <button className="btn-secondary" onClick={() => setStep(2)}>
-                Пропустити
+                {t("common.skip")}
               </button>
             </div>
           </>
@@ -161,11 +166,11 @@ export function AddGamePage() {
         {step === 2 && gameId && (
           <>
             <div className="form-group">
-              <label>Фото боксу</label>
+              <label>{t("addGame.boxLabel")}</label>
               <input type="file" accept="image/*" id="box-input" />
             </div>
             <div className="form-group">
-              <label>Скан мануалу (PDF або зображення)</label>
+              <label>{t("addGame.manualLabel")}</label>
               <input type="file" accept="image/*,application/pdf" id="manual-input" />
             </div>
             <div className="actions">
@@ -184,10 +189,10 @@ export function AddGamePage() {
                 }}
                 disabled={uploadMediaMutation.isPending}
               >
-                {uploadMediaMutation.isPending ? "Завантаження..." : "Далі"}
+                {uploadMediaMutation.isPending ? t("addGame.uploading") : t("common.next")}
               </button>
               <button className="btn-secondary" onClick={() => setStep(3)}>
-                Пропустити
+                {t("common.skip")}
               </button>
             </div>
           </>
@@ -196,18 +201,18 @@ export function AddGamePage() {
         {step === 3 && gameId && (
           <>
             <div className="form-group">
-              <label>Регіон</label>
+              <label>{t("addGame.region")}</label>
               <select value={region} onChange={(e) => setRegion(e.target.value as Region | "")}>
-                <option value="">Не вказано</option>
+                <option value="">{t("common.notSpecified")}</option>
                 {REGIONS.map((r) => (
                   <option key={r} value={r}>
-                    {REGION_LABELS[r]}
+                    {t(`region.${r}` as MessageKey)}
                   </option>
                 ))}
               </select>
             </div>
             <div className="form-group">
-              <label>Ціна покупки</label>
+              <label>{t("addGame.purchasePrice")}</label>
               <div style={{ display: "flex", gap: "0.5rem" }}>
                 <input
                   type="number"
@@ -228,26 +233,26 @@ export function AddGamePage() {
               </div>
             </div>
             <div className="form-group">
-              <label>Стан</label>
+              <label>{t("addGame.condition")}</label>
               <select
                 value={condition}
                 onChange={(e) => setCondition(e.target.value as GameCondition | "")}
               >
-                <option value="">Не вказано</option>
+                <option value="">{t("common.notSpecified")}</option>
                 {GAME_CONDITIONS.map((c) => (
                   <option key={c} value={c}>
-                    {GAME_CONDITION_LABELS[c]}
+                    {t(`condition.${c}` as MessageKey)}
                   </option>
                 ))}
               </select>
             </div>
             <div className="form-group">
-              <label>Нотатки</label>
+              <label>{t("addGame.notes")}</label>
               <textarea
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
                 rows={3}
-                placeholder="Куплено на Yahoo Auctions, є подряпини на коробці..."
+                placeholder={t("addGame.notesPlaceholder")}
               />
             </div>
             <button
@@ -266,7 +271,7 @@ export function AddGamePage() {
               }
               disabled={updateMutation.isPending}
             >
-              {updateMutation.isPending ? "Збереження..." : "Завершити"}
+              {updateMutation.isPending ? t("common.saving") : t("addGame.finish")}
             </button>
           </>
         )}

@@ -20,6 +20,7 @@ export const games = sqliteTable("games", {
   currency: text("currency").default("UAH"),
   condition: text("condition"),
   notes: text("notes"),
+  genres: text("genres", { mode: "json" }).$type<string[]>().notNull().default([]),
   customMeta: text("custom_meta", { mode: "json" }).$type<Record<string, unknown>>(),
   createdAt: text("created_at")
     .notNull()
@@ -65,6 +66,18 @@ export const patches = sqliteTable("patches", {
   originalFilename: text("original_filename").notNull(),
 });
 
+export const saves = sqliteTable("saves", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  gameId: integer("game_id")
+    .notNull()
+    .references(() => games.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  format: text("format").notNull().default("sram"),
+  storagePath: text("storage_path").notNull(),
+  originalFilename: text("original_filename").notNull(),
+  size: integer("size").notNull(),
+});
+
 export const scrapedMetadata = sqliteTable("scraped_metadata", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   gameId: integer("game_id")
@@ -99,6 +112,7 @@ export const gamesRelations = relations(games, ({ one, many }) => ({
   }),
   mediaAssets: many(mediaAssets),
   patches: many(patches),
+  saves: many(saves),
   scrapedMetadata: one(scrapedMetadata, {
     fields: [games.id],
     references: [scrapedMetadata.gameId],
@@ -122,6 +136,13 @@ export const mediaAssetsRelations = relations(mediaAssets, ({ one }) => ({
 export const patchesRelations = relations(patches, ({ one }) => ({
   game: one(games, {
     fields: [patches.gameId],
+    references: [games.id],
+  }),
+}));
+
+export const savesRelations = relations(saves, ({ one }) => ({
+  game: one(games, {
+    fields: [saves.gameId],
     references: [games.id],
   }),
 }));

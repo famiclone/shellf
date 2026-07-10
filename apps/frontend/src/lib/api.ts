@@ -10,7 +10,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, init);
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: res.statusText }));
-    throw new Error((err as { error?: string }).error ?? "Помилка запиту");
+    throw new Error((err as { error?: string }).error ?? "Request failed");
   }
   if (res.status === 204) return undefined as T;
   return res.json() as Promise<T>;
@@ -42,17 +42,24 @@ export const api = {
     }),
   deleteGame: (id: number) =>
     request<{ ok: boolean }>(`/games/${id}`, { method: "DELETE" }),
+  deleteRom: (id: number) =>
+    request<{ ok: boolean }>(`/games/${id}/rom`, { method: "DELETE" }),
   uploadRom: (id: number, file: File) => {
     const fd = new FormData();
     fd.append("file", file);
     return request<Game>(`/games/${id}/rom`, { method: "POST", body: fd });
   },
-  uploadMedia: (id: number, file: File, type: string) => {
+  uploadMedia: (id: number, file: File, type: string, replace?: boolean) => {
     const fd = new FormData();
     fd.append("file", file);
     fd.append("type", type);
-    return request<unknown>(`/games/${id}/media`, { method: "POST", body: fd });
+    const qs = replace ? "?replace=true" : "";
+    return request<unknown>(`/games/${id}/media${qs}`, { method: "POST", body: fd });
   },
+  deleteMedia: (gameId: number, assetId: number) =>
+    request<{ ok: boolean }>(`/games/${gameId}/media/${assetId}`, {
+      method: "DELETE",
+    }),
   getMediaUrl: (gameId: number, assetId: number) =>
     `/api/games/${gameId}/media/${assetId}`,
   getRomDownloadUrl: (id: number, patchId?: number, inline?: boolean) => {
@@ -62,6 +69,7 @@ export const api = {
     const qs = q.toString();
     return `/api/games/${id}/rom${qs ? `?${qs}` : ""}`;
   },
+  getPackDownloadUrl: (id: number) => `/api/games/${id}/pack`,
   getPlayInfo: (id: number, patchId?: number) =>
     request<{ romUrl: string; core: string; title: string }>(
       `/games/${id}/play${patchId ? `?patchId=${patchId}` : ""}`,
@@ -80,6 +88,28 @@ export const api = {
     request<{ ok: boolean }>(`/games/${gameId}/patches/${patchId}`, {
       method: "DELETE",
     }),
+  getSaves: (id: number) =>
+    request<
+      Array<{
+        id: number;
+        name: string;
+        format: string;
+        originalFilename: string;
+        size: number;
+      }>
+    >(`/games/${id}/saves`),
+  uploadSave: (id: number, file: File, name?: string) => {
+    const fd = new FormData();
+    fd.append("file", file);
+    if (name) fd.append("name", name);
+    return request<unknown>(`/games/${id}/saves`, { method: "POST", body: fd });
+  },
+  deleteSave: (gameId: number, saveId: number) =>
+    request<{ ok: boolean }>(`/games/${gameId}/saves/${saveId}`, {
+      method: "DELETE",
+    }),
+  getSaveDownloadUrl: (gameId: number, saveId: number) =>
+    `/api/games/${gameId}/saves/${saveId}`,
   scrapeGame: (id: number) =>
     request<Game>(`/games/${id}/scrape`, { method: "POST" }),
 };

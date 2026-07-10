@@ -4,6 +4,7 @@ import { DashboardPage } from "./pages/DashboardPage";
 import { PlatformsPage } from "./pages/PlatformsPage";
 import { PlatformGamesPage } from "./pages/PlatformGamesPage";
 import { GameDetailPage } from "./pages/GameDetailPage";
+import { EditGamePage } from "./pages/EditGamePage";
 import { AddGamePage } from "./pages/AddGamePage";
 
 export default function App() {
@@ -14,6 +15,7 @@ export default function App() {
         <Route path="platforms" element={<PlatformsPage />} />
         <Route path="platforms/:id" element={<PlatformGamesPage />} />
         <Route path="games/new" element={<AddGamePage />} />
+        <Route path="games/:id/edit" element={<EditGamePage />} />
         <Route path="games/:id" element={<GameDetailPage />} />
       </Route>
     </Routes>
