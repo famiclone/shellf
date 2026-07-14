@@ -1,3 +1,5 @@
+import { getAppSettingsData } from "./settings";
+
 const BASE_URL = "https://www.screenscraper.fr/api2";
 
 interface ScreenScraperConfig {
@@ -6,10 +8,17 @@ interface ScreenScraperConfig {
   softname: string;
 }
 
-function getConfig(): ScreenScraperConfig | null {
-  const devId = process.env.SCREENSCRAPER_DEV_ID;
-  const devPassword = process.env.SCREENSCRAPER_DEV_PASSWORD;
-  const softname = process.env.SCREENSCRAPER_SOFTNAME ?? "shellf";
+async function getConfig(): Promise<ScreenScraperConfig | null> {
+  const settings = await getAppSettingsData();
+  const fromDb = settings.screenscraper;
+  const devId = fromDb.devId || process.env.SCREENSCRAPER_DEV_ID || "";
+  const devPassword =
+    fromDb.devPassword || process.env.SCREENSCRAPER_DEV_PASSWORD || "";
+  const softname =
+    fromDb.softname ||
+    process.env.SCREENSCRAPER_SOFTNAME ||
+    "shellf";
+
   if (!devId || !devPassword) return null;
   return { devId, devPassword, softname };
 }
@@ -19,7 +28,41 @@ export interface ScreenScraperResult {
   title: string | null;
   description: string | null;
   coverUrl: string | null;
+  genres: string[];
   rawPayload: Record<string, unknown>;
+}
+
+function parseGenres(jeu: Record<string, unknown>): string[] {
+  const genres = jeu.genres as
+    | Array<{
+        id?: string | number;
+        noms?: Array<{ langue?: string; text?: string }>;
+        nom_en?: string;
+        nom_fr?: string;
+      }>
+    | undefined;
+  if (!Array.isArray(genres)) return [];
+
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const g of genres) {
+    const noms = g.noms ?? [];
+    const text =
+      noms.find((n) => n.langue === "en")?.text ??
+      noms.find((n) => n.langue === "wor")?.text ??
+      noms[0]?.text ??
+      g.nom_en ??
+      g.nom_fr ??
+      null;
+    if (!text) continue;
+    const tag = text.trim();
+    if (!tag) continue;
+    const key = tag.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(tag);
+  }
+  return out;
 }
 
 export async function lookupByHash(
@@ -28,9 +71,11 @@ export async function lookupByHash(
   sha1: string,
   systemShortName: string,
 ): Promise<ScreenScraperResult | null> {
-  const config = getConfig();
+  const config = await getConfig();
   if (!config) {
-    throw new Error("ScreenScraper не налаштовано. Вкажіть SCREENSCRAPER_DEV_ID та SCREENSCRAPER_DEV_PASSWORD");
+    throw new Error(
+      "ScreenScraper не налаштовано. Додайте credentials у Settings → Scraper або SCREENSCRAPER_DEV_ID / SCREENSCRAPER_DEV_PASSWORD",
+    );
   }
 
   const params = new URLSearchParams({
@@ -54,7 +99,6 @@ export async function lookupByHash(
   const responseData = data.response as Record<string, unknown> | undefined;
   const jeu = (responseData?.jeu ?? data.jeu) as Record<string, unknown> | undefined;
   if (jeu) {
-
     const id = String(jeu.id ?? "");
     const noms = jeu.noms as Array<{ region: string; text: string }> | undefined;
     const synopsis = jeu.synopsis as Array<{ text: string }> | undefined;
@@ -76,6 +120,7 @@ export async function lookupByHash(
       title,
       description,
       coverUrl,
+      genres: parseGenres(jeu),
       rawPayload: jeu as Record<string, unknown>,
     };
   }
