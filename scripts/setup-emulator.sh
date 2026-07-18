@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-DEST="$ROOT/apps/frontend/public/emulator"
+DEST="${EMULATOR_DEST:-$ROOT/apps/frontend/public/emulator}"
 DATA_DIR="$DEST/data"
 CORES_DIR="$DATA_DIR/cores"
 CDN="https://cdn.emulatorjs.org/stable/data"

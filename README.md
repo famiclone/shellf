@@ -52,13 +52,15 @@ Then open:
 # Create htpasswd (login/password for nginx)
 htpasswd -c nginx/.htpasswd admin
 
-# Build and start
+# Build and start (EmulatorJS is downloaded into the nginx image during build)
 docker compose up --build -d
 ```
 
 Open http://localhost:8180
 
 Default credentials are `shellf` / `shellf` — change them before exposing the service.
+
+Do **not** mount an empty host directory over `/var/www/frontend/emulator` — that hides the baked-in EmulatorJS. Only mount that path if you ship your own emulator files.
 
 ## ScreenScraper
 

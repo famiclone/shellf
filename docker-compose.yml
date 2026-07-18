@@ -26,8 +26,8 @@ services:
     container_name: shellf-nginx
     ports:
       - "8180:8080"
-    volumes:
-      - ./apps/frontend/public/emulator:/var/www/frontend/emulator:ro
+    # EmulatorJS is baked into the image at build time.
+    # Optional override: mount a host dir over /var/www/frontend/emulator
     depends_on:
       - backend
     restart: unless-stopped
