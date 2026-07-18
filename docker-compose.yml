@@ -11,12 +11,12 @@ services:
     environment:
       - DATA_DIR=/data
       - DATABASE_URL=file:/data/shellf.db
-      - PORT=3000
+      - PORT=3100
       - SCREENSCRAPER_DEV_ID=${SCREENSCRAPER_DEV_ID:-}
       - SCREENSCRAPER_DEV_PASSWORD=${SCREENSCRAPER_DEV_PASSWORD:-}
       - SCREENSCRAPER_SOFTNAME=${SCREENSCRAPER_SOFTNAME:-shellf}
     expose:
-      - "3000"
+      - "3100"
     restart: unless-stopped
 
   nginx:
@@ -25,7 +25,7 @@ services:
       dockerfile: nginx/Dockerfile
     container_name: shellf-nginx
     ports:
-      - "8080:80"
+      - "8180:8080"
     volumes:
       - ./apps/frontend/public/emulator:/var/www/frontend/emulator:ro
     depends_on:

@@ -36,7 +36,7 @@ app.route("/api/platforms", groupRoutes);
 /** @deprecated Prefer /api/items */
 app.route("/api/games", itemRoutes);
 
-const port = Number(process.env.PORT ?? 3000);
+const port = Number(process.env.PORT ?? 3100);
 console.log(`Shellf API running on http://localhost:${port}`);
 
 export default {

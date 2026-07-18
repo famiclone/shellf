@@ -42,7 +42,7 @@ bun run dev
 Then open:
 
 - Frontend: http://localhost:5173
-- Backend API: http://localhost:3000
+- Backend API: http://localhost:3100
 
 `bun run dev` also runs the emulator setup automatically if needed.
 
@@ -56,7 +56,7 @@ htpasswd -c nginx/.htpasswd admin
 docker compose up --build -d
 ```
 
-Open http://localhost:8080
+Open http://localhost:8180
 
 Default credentials are `shellf` / `shellf` — change them before exposing the service.
 
