@@ -1,17 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { Link } from "react-router-dom";
-import type { KindFeatures } from "@shellf/shared";
 import { api } from "../lib/api";
 import { useI18n } from "../lib/i18n";
-
-const FEATURE_KEYS: Array<keyof KindFeatures> = [
-  "emulator",
-  "rom",
-  "patches",
-  "saves",
-  "scrape",
-];
 
 export function PlatformsPage() {
   const { t } = useI18n();
@@ -20,9 +11,6 @@ export function PlatformsPage() {
   const [name, setName] = useState("");
   const [kindId, setKindId] = useState<number | "">("");
   const [emulatorCore, setEmulatorCore] = useState("");
-  const [createKind, setCreateKind] = useState(false);
-  const [kindName, setKindName] = useState("");
-  const [kindFeatures, setKindFeatures] = useState<KindFeatures>({});
   const [formError, setFormError] = useState("");
 
   const { data, isLoading, error } = useQuery({
@@ -35,10 +23,6 @@ export function PlatformsPage() {
     queryFn: api.getKinds,
   });
 
-  const createKindMutation = useMutation({
-    mutationFn: api.createKind,
-  });
-
   const createGroupMutation = useMutation({
     mutationFn: api.createGroup,
     onSuccess: () => {
@@ -48,9 +32,6 @@ export function PlatformsPage() {
       setName("");
       setKindId("");
       setEmulatorCore("");
-      setCreateKind(false);
-      setKindName("");
-      setKindFeatures({});
       setFormError("");
     },
     onError: (err) => setFormError((err as Error).message),
@@ -62,24 +43,15 @@ export function PlatformsPage() {
       setFormError(t("platforms.createErrorName"));
       return;
     }
+    if (kindId === "") {
+      setFormError(t("platforms.createErrorKind"));
+      return;
+    }
     setFormError("");
     try {
-      let resolvedKindId = kindId === "" ? undefined : Number(kindId);
-      if (createKind) {
-        if (!kindName.trim()) {
-          setFormError(t("platforms.createErrorKindName"));
-          return;
-        }
-        const kind = await createKindMutation.mutateAsync({
-          name: kindName.trim(),
-          features: kindFeatures,
-        });
-        queryClient.invalidateQueries({ queryKey: ["kinds"] });
-        resolvedKindId = kind.id;
-      }
       await createGroupMutation.mutateAsync({
         name: name.trim(),
-        kindId: resolvedKindId ?? null,
+        kindId: Number(kindId),
         emulatorCore: emulatorCore.trim() || null,
       });
     } catch (err) {
@@ -91,6 +63,7 @@ export function PlatformsPage() {
   if (error) return <p className="error">{(error as Error).message}</p>;
 
   const groups = data ?? [];
+  const kindById = new Map((kinds ?? []).map((k) => [k.id, k]));
 
   return (
     <div>
@@ -120,6 +93,21 @@ export function PlatformsPage() {
             />
           </div>
           <div className="form-group">
+            <label>{t("platforms.createKind")}</label>
+            <select
+              value={kindId}
+              onChange={(e) => setKindId(e.target.value ? Number(e.target.value) : "")}
+              required
+            >
+              <option value="">{t("platforms.createKindRequired")}</option>
+              {kinds?.map((kind) => (
+                <option key={kind.id} value={kind.id}>
+                  {kind.name}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="form-group">
             <label>{t("platforms.createEmulatorCore")}</label>
             <input
               value={emulatorCore}
@@ -127,72 +115,12 @@ export function PlatformsPage() {
               placeholder="nes"
             />
           </div>
-          <div className="form-group">
-            <label className="checkbox-label">
-              <input
-                type="checkbox"
-                checked={createKind}
-                onChange={(e) => {
-                  setCreateKind(e.target.checked);
-                  if (e.target.checked) setKindId("");
-                }}
-              />
-              {t("platforms.createCustomKind")}
-            </label>
-          </div>
-          {createKind ? (
-            <>
-              <div className="form-group">
-                <label>{t("platforms.createKindName")}</label>
-                <input
-                  value={kindName}
-                  onChange={(e) => setKindName(e.target.value)}
-                  placeholder={t("platforms.createKindNamePlaceholder")}
-                />
-              </div>
-              <div className="form-group">
-                <label>{t("platforms.createKindFeatures")}</label>
-                <div style={{ display: "flex", flexWrap: "wrap", gap: "0.75rem" }}>
-                  {FEATURE_KEYS.map((feature) => (
-                    <label key={feature} className="checkbox-label">
-                      <input
-                        type="checkbox"
-                        checked={Boolean(kindFeatures[feature])}
-                        onChange={(e) =>
-                          setKindFeatures((prev) => ({
-                            ...prev,
-                            [feature]: e.target.checked,
-                          }))
-                        }
-                      />
-                      {feature}
-                    </label>
-                  ))}
-                </div>
-              </div>
-            </>
-          ) : (
-            <div className="form-group">
-              <label>{t("platforms.createKind")}</label>
-              <select
-                value={kindId}
-                onChange={(e) => setKindId(e.target.value ? Number(e.target.value) : "")}
-              >
-                <option value="">{t("platforms.createKindOptional")}</option>
-                {kinds?.map((kind) => (
-                  <option key={kind.id} value={kind.id}>
-                    {kind.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-          )}
           <button
             type="submit"
             className="btn-primary"
-            disabled={createGroupMutation.isPending || createKindMutation.isPending}
+            disabled={createGroupMutation.isPending}
           >
-            {createGroupMutation.isPending || createKindMutation.isPending
+            {createGroupMutation.isPending
               ? t("common.saving")
               : t("platforms.createSubmit")}
           </button>
@@ -206,20 +134,25 @@ export function PlatformsPage() {
         </div>
       ) : (
         <div className="grid grid-2">
-          {groups.map((group) => (
-            <Link
-              key={group.id}
-              to={`/groups/${group.id}`}
-              className="platform-card"
-            >
-              <h3>{group.name}</h3>
-              <div className="count">
-                <span className="badge">{group.slug}</span>
-                {" · "}
-                {t("platforms.gameMany", { count: group.itemCount ?? 0 })}
-              </div>
-            </Link>
-          ))}
+          {groups.map((group) => {
+            const kind = group.kindId != null ? kindById.get(group.kindId) : null;
+            return (
+              <Link
+                key={group.id}
+                to={`/groups/${group.id}`}
+                className="platform-card"
+              >
+                <h3>{group.name}</h3>
+                <div className="count">
+                  {kind && <span className="badge">{kind.name}</span>}
+                  {kind && " · "}
+                  <span className="badge">{group.slug}</span>
+                  {" · "}
+                  {t("platforms.gameMany", { count: group.itemCount ?? 0 })}
+                </div>
+              </Link>
+            );
+          })}
         </div>
       )}
     </div>

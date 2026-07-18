@@ -9,6 +9,7 @@ import {
   type Region,
 } from "@shellf/shared";
 import { api, getItemCover, getItemTagList } from "../lib/api";
+import { BoxArtImage } from "../components/BoxArtImage";
 import { useI18n, type MessageKey } from "../lib/i18n";
 
 export function ItemsPage() {
@@ -129,7 +130,7 @@ export function ItemsPage() {
                   style={{ ["--cover-aspect" as string]: coverAspect }}
                 >
                   {cover ? (
-                    <img src={cover} alt={item.title} />
+                    <BoxArtImage src={cover} alt={item.title} aspectRatio={coverAspect} />
                   ) : (
                     <span className="placeholder">?</span>
                   )}

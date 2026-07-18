@@ -951,12 +951,16 @@ itemRoutes.post("/:id/scrape", async (c) => {
   }
 
   try {
-    const result = await lookupByHash(
-      item.romFile.crc32,
-      item.romFile.md5,
-      item.romFile.sha1,
-      item.group?.slug ?? "",
-    );
+    const result = await lookupByHash({
+      crc: item.romFile.crc32,
+      md5: item.romFile.md5,
+      sha1: item.romFile.sha1,
+      systemShortName: item.group?.slug ?? "",
+      romFilename: item.romFile.originalFilename,
+      romSize: item.romFile.size,
+      region: item.region,
+      condition: item.condition,
+    });
 
     if (!result) {
       return c.json({ error: "Айтем не знайдено в ScreenScraper" }, 404);
@@ -989,6 +993,7 @@ itemRoutes.post("/:id/scrape", async (c) => {
     const updated = await getItemOr404(id);
     return c.json(updated);
   } catch (err) {
+    console.error("[scrape]", err);
     const message = err instanceof Error ? err.message : "Помилка ScreenScraper";
     return c.json({ error: message }, 502);
   }
