@@ -10,8 +10,14 @@ COPY apps/frontend ./apps/frontend
 WORKDIR /app/apps/frontend
 RUN bun run build
 
+FROM alpine:3.20 AS emulator
+RUN apk add --no-cache bash curl git unzip
+COPY scripts/setup-emulator.sh /setup-emulator.sh
+ENV EMULATOR_DEST=/emulator
+RUN bash /setup-emulator.sh
+
 FROM nginx:alpine
 COPY nginx/nginx.conf /etc/nginx/nginx.conf
 COPY nginx/.htpasswd /etc/nginx/.htpasswd
 COPY --from=frontend-builder /app/apps/frontend/dist /var/www/frontend
-# EmulatorJS is mounted or copied separately; optional volume at /var/www/frontend/emulator
+COPY --from=emulator /emulator /var/www/frontend/emulator
