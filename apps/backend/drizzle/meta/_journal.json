@@ -64,6 +64,13 @@
       "when": 1783740000000,
       "tag": "0008_tags",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "6",
+      "when": 1783750000000,
+      "tag": "0009_fixed_kinds",
+      "breakpoints": true
     }
   ]
 }

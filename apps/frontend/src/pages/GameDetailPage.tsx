@@ -29,6 +29,7 @@ import { GameActionsMenu } from "../components/GameActionsMenu";
 import { GameDownloadMenu } from "../components/GameDownloadMenu";
 import { GamePatchesPanel } from "../components/GamePatchesPanel";
 import { api, getItemCover, getItemTagList } from "../lib/api";
+import { BoxArtImage } from "../components/BoxArtImage";
 import { useI18n, type MessageKey } from "../lib/i18n";
 
 type AttachedFile = {
@@ -185,7 +186,7 @@ export function GameDetailPage() {
             style={{ ["--cover-aspect" as string]: coverAspect }}
           >
             {cover ? (
-              <img src={cover} alt={game.title} />
+              <BoxArtImage src={cover} alt={game.title} aspectRatio={coverAspect} />
             ) : (
               <div className="empty-state">{t("game.noCover")}</div>
             )}

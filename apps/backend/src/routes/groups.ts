@@ -122,10 +122,8 @@ groupRoutes.post("/", async (c) => {
   }
 
   const slug = parsed.data.slug || slugify(parsed.data.name);
-  if (parsed.data.kindId) {
-    const [kind] = await db.select().from(kinds).where(eq(kinds.id, parsed.data.kindId));
-    if (!kind) return c.json({ error: "Kind не знайдено" }, 404);
-  }
+  const [kind] = await db.select().from(kinds).where(eq(kinds.id, parsed.data.kindId));
+  if (!kind) return c.json({ error: "Kind не знайдено" }, 404);
 
   try {
     const [created] = await db
@@ -134,7 +132,7 @@ groupRoutes.post("/", async (c) => {
         name: parsed.data.name,
         slug,
         description: parsed.data.description ?? null,
-        kindId: parsed.data.kindId ?? null,
+        kindId: parsed.data.kindId,
         emulatorCore: parsed.data.emulatorCore ?? null,
       })
       .returning();
@@ -156,15 +154,31 @@ groupRoutes.patch("/:id", async (c) => {
     return c.json({ error: parsed.error.flatten() }, 400);
   }
 
+  if (parsed.data.kindId != null) {
+    const [kind] = await db.select().from(kinds).where(eq(kinds.id, parsed.data.kindId));
+    if (!kind) return c.json({ error: "Kind не знайдено" }, 404);
+  }
+
+  const patch: Record<string, unknown> = { ...parsed.data };
+  if (parsed.data.slug === "" || parsed.data.slug == null) {
+    delete patch.slug;
+  }
+
   const [updated] = await db
     .update(groups)
-    .set({
-      ...parsed.data,
-      slug: parsed.data.slug || undefined,
-    })
+    .set(patch)
     .where(eq(groups.id, id))
     .returning();
 
   if (!updated) return c.json({ error: "Групу не знайдено" }, 404);
+
+  // Keep items in sync when group type changes
+  if (parsed.data.kindId != null) {
+    await db
+      .update(items)
+      .set({ kindId: parsed.data.kindId })
+      .where(eq(items.groupId, id));
+  }
+
   return c.json(updated);
 });

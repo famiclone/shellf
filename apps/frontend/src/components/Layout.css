@@ -187,12 +187,27 @@
   align-items: center;
   justify-content: center;
   overflow: hidden;
+  position: relative;
+  container-type: size;
 }
 
 .game-card-cover img {
   width: 100%;
   height: 100%;
   object-fit: contain;
+}
+
+/* Landscape scan in a portrait slot (or vice versa): rotate to match. */
+.game-card-cover img.is-rotated-90,
+.cover-large img.is-rotated-90 {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 100cqh;
+  height: 100cqw;
+  max-width: none;
+  object-fit: contain;
+  transform: translate(-50%, -50%) rotate(90deg);
 }
 
 .game-card-cover .placeholder {
@@ -455,6 +470,8 @@
   display: flex;
   align-items: center;
   justify-content: center;
+  position: relative;
+  container-type: size;
 }
 
 .cover-large img {

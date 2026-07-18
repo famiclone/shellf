@@ -155,13 +155,29 @@ export const DEFAULT_KINDS = [
       scrape: true,
     },
   },
-  { slug: "figure", name: "Figure", isSystem: true, features: {} },
-  { slug: "lego", name: "LEGO", isSystem: true, features: {} },
+  { slug: "audio", name: "Audio", isSystem: true, features: {} },
+  { slug: "video", name: "Video", isSystem: true, features: {} },
+  { slug: "card", name: "Card", isSystem: true, features: {} },
   { slug: "book", name: "Book", isSystem: true, features: {} },
-  { slug: "disc", name: "Disc", isSystem: true, features: {} },
-  { slug: "cassette", name: "Cassette", isSystem: true, features: {} },
-  { slug: "other", name: "Other", isSystem: true, features: {} },
 ] as const;
+
+/** Fixed item/group type slugs. */
+export const KIND_SLUGS = DEFAULT_KINDS.map((k) => k.slug);
+export type KindSlug = (typeof DEFAULT_KINDS)[number]["slug"];
+
+/** Map legacy kind slugs onto the fixed set. */
+export const LEGACY_KIND_SLUG_MAP: Record<string, KindSlug> = {
+  game: "game",
+  audio: "audio",
+  video: "video",
+  card: "card",
+  book: "book",
+  figure: "card",
+  lego: "card",
+  disc: "video",
+  cassette: "audio",
+  other: "game",
+};
 
 /** Seed groups for game collections (migrated from old platforms). */
 export const DEFAULT_GROUPS = [
@@ -202,10 +218,12 @@ export function slugify(input: string): string {
 
 /**
  * Cover aspect ratios keyed by group slug (legacy platform short names).
+ * Values are CSS `width / height` for the card slot.
  */
 export const BOX_ART_ASPECT_RATIOS: Record<string, string> = {
   nes: "7 / 10",
-  famicom: "1 / 1",
+  /** Portrait slot — landscape Famicom scans are rotated 90° to fit. */
+  famicom: "7 / 9",
   snes: "11 / 15",
   gb: "3 / 5",
   gbc: "3 / 5",
@@ -219,6 +237,49 @@ export const DEFAULT_BOX_ART_ASPECT_RATIO = "2 / 3";
 export function getBoxArtAspectRatio(slug?: string | null): string {
   if (!slug) return DEFAULT_BOX_ART_ASPECT_RATIO;
   return BOX_ART_ASPECT_RATIOS[slug] ?? DEFAULT_BOX_ART_ASPECT_RATIO;
+}
+
+/** Parse CSS aspect like `"7 / 9"` → width/height number. */
+export function parseAspectRatio(ratio: string): number | null {
+  const m = ratio.trim().match(/^([\d.]+)\s*\/\s*([\d.]+)$/);
+  if (!m) return null;
+  const w = Number(m[1]);
+  const h = Number(m[2]);
+  if (!Number.isFinite(w) || !Number.isFinite(h) || h === 0) return null;
+  return w / h;
+}
+
+/**
+ * True when image orientation is roughly the inverse of the platform slot
+ * (e.g. slot 7/9 portrait, image 9/7 landscape) → rotate 90°.
+ */
+export function boxArtNeedsRotation(
+  imageWidth: number,
+  imageHeight: number,
+  expectedAspect: string | number,
+  tolerance = 0.22,
+): boolean {
+  if (!imageWidth || !imageHeight) return false;
+  const expected =
+    typeof expectedAspect === "number"
+      ? expectedAspect
+      : parseAspectRatio(expectedAspect);
+  if (expected == null || expected <= 0) return false;
+
+  const actual = imageWidth / imageHeight;
+  const expectedPortrait = expected < 1 - 0.05;
+  const expectedLandscape = expected > 1 + 0.05;
+  const actualPortrait = actual < 1 - 0.05;
+  const actualLandscape = actual > 1 + 0.05;
+
+  // Need opposite orientation (ignore near-square pairs)
+  if (expectedPortrait && !actualLandscape) return false;
+  if (expectedLandscape && !actualPortrait) return false;
+  if (!expectedPortrait && !expectedLandscape) return false;
+
+  const inverse = 1 / expected;
+  const rel = Math.abs(actual - inverse) / inverse;
+  return rel <= tolerance;
 }
 
 export const kindFeaturesSchema = z.object({
@@ -239,7 +300,7 @@ export const createGroupSchema = z.object({
   name: z.string().min(1),
   slug: z.string().min(1).max(48).regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/).optional(),
   description: z.string().optional().nullable(),
-  kindId: z.number().int().positive().optional().nullable(),
+  kindId: z.number().int().positive(),
   emulatorCore: z.string().optional().nullable(),
 });
 

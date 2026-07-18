@@ -1,21 +1,30 @@
 import { DEFAULT_GROUPS, DEFAULT_KINDS } from "@shellf/shared";
+import { eq } from "drizzle-orm";
 import { db } from "./index";
 import { groups, kinds } from "./schema";
 
-const existingKinds = await db.select().from(kinds);
-if (existingKinds.length === 0) {
-  await db.insert(kinds).values(
-    DEFAULT_KINDS.map((k) => ({
+/** Ensure the fixed kind set exists and is up to date. */
+for (const k of DEFAULT_KINDS) {
+  const [existing] = await db.select().from(kinds).where(eq(kinds.slug, k.slug)).limit(1);
+  if (existing) {
+    await db
+      .update(kinds)
+      .set({
+        name: k.name,
+        isSystem: k.isSystem,
+        features: { ...k.features },
+      })
+      .where(eq(kinds.id, existing.id));
+  } else {
+    await db.insert(kinds).values({
       slug: k.slug,
       name: k.name,
       isSystem: k.isSystem,
       features: { ...k.features },
-    })),
-  );
-  console.log(`Seeded ${DEFAULT_KINDS.length} kinds.`);
-} else {
-  console.log("Kinds already seeded, skipping.");
+    });
+  }
 }
+console.log(`Synced ${DEFAULT_KINDS.length} kinds.`);
 
 const existingGroups = await db.select().from(groups);
 if (existingGroups.length > 0) {
