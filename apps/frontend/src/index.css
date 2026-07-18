@@ -14,7 +14,23 @@
   --overlay: rgba(8, 10, 14, 0.72);
   --radius: 12px;
   --font: "LINE Seed JP", system-ui, sans-serif;
-  --mono: "JetBrains Mono", monospace;
+  --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+@font-face {
+  font-family: "LINE Seed JP";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("/fonts/LINESeedJP-Regular.ttf") format("truetype");
+}
+
+@font-face {
+  font-family: "LINE Seed JP";
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url("/fonts/LINESeedJP-Bold.ttf") format("truetype");
 }
 
 [data-theme="light"] {
