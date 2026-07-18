@@ -23,3 +23,5 @@ COPY nginx/nginx.conf /etc/nginx/nginx.conf
 COPY nginx/.htpasswd /etc/nginx/.htpasswd
 COPY --from=frontend-builder /app/apps/frontend/dist /var/www/frontend
 COPY --from=emulator /emulator /var/www/frontend/emulator
+# Ensure Shellf player shell is present even if CDN stage is cached oddly
+COPY apps/frontend/emulator-static/ /var/www/frontend/emulator/
