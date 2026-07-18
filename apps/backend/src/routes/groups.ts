@@ -59,15 +59,30 @@ groupRoutes.get("/stats/dashboard", async (c) => {
 
   const pricedRows = await db
     .select({
+      id: items.id,
+      title: items.title,
+      groupId: items.groupId,
+      groupName: groups.name,
       condition: items.condition,
       pricecharting: scrapedMetadata.pricecharting,
       marketPrice: scrapedMetadata.marketPrice,
+      coverUrl: scrapedMetadata.coverUrl,
     })
     .from(items)
+    .innerJoin(groups, eq(items.groupId, groups.id))
     .leftJoin(scrapedMetadata, eq(scrapedMetadata.itemId, items.id));
 
   let totalMarketValue = 0;
   let marketPricedItems = 0;
+  const pricedList: Array<{
+    id: number;
+    title: string;
+    groupId: number;
+    groupName: string;
+    marketValue: number;
+    coverUrl: string | null;
+  }> = [];
+
   for (const row of pricedRows) {
     const fromPc = priceForCondition(
       row.pricecharting as PriceChartingData | null,
@@ -81,7 +96,19 @@ groupRoutes.get("/stats/dashboard", async (c) => {
     if (value == null) continue;
     totalMarketValue += value;
     marketPricedItems += 1;
+    pricedList.push({
+      id: row.id,
+      title: row.title,
+      groupId: row.groupId,
+      groupName: row.groupName,
+      marketValue: Math.round(value * 100) / 100,
+      coverUrl: row.coverUrl ?? null,
+    });
   }
+
+  pricedList.sort((a, b) => b.marketValue - a.marketValue);
+  const topExpensive = pricedList.slice(0, 3);
+  const topCheapest = [...pricedList].sort((a, b) => a.marketValue - b.marketValue).slice(0, 3);
 
   const byGroupMapped = byGroup.map((p) => ({
     groupId: p.groupId,
@@ -96,6 +123,8 @@ groupRoutes.get("/stats/dashboard", async (c) => {
     totalMarketValue: Math.round(totalMarketValue * 100) / 100,
     marketPricedItems,
     byGroup: byGroupMapped,
+    topExpensive,
+    topCheapest,
     // backwards-compatible aliases
     totalGames: totalItems[0]?.count ?? 0,
     byPlatform: byGroupMapped.map((p) => ({

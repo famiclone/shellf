@@ -12,6 +12,7 @@ import {
   LuJoystick,
   LuPlus,
   LuRefreshCw,
+  LuRotateCw,
   LuSave,
   LuTrash2,
 } from "react-icons/lu";
@@ -21,6 +22,8 @@ import {
   getBoxArtAspectRatio,
   kindHasFeature,
   LEGACY_REGION_MAP,
+  nextCoverRotation,
+  normalizeCoverRotation,
   pricechartingKeyForCondition,
   type PriceChartingPriceKey,
 } from "@shellf/shared";
@@ -80,6 +83,14 @@ export function GameDetailPage() {
     onError: (err) => setPriceSyncError((err as Error).message),
   });
 
+  const rotateCover = useMutation({
+    mutationFn: (coverRotation: number) => api.updateItem(itemId, { coverRotation }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["item", itemId] });
+      queryClient.invalidateQueries({ queryKey: ["items"] });
+    },
+  });
+
   if (isLoading) return <p>{t("common.loading")}</p>;
   if (error || !game) {
     return (
@@ -98,6 +109,7 @@ export function GameDetailPage() {
   const group = game.group;
   const cover = getItemCover(game);
   const coverAspect = getBoxArtAspectRatio(group?.slug);
+  const coverRotation = normalizeCoverRotation(game.coverRotation);
   const canPlay = hasEmulator && hasRom && !!game.romFile && !!group?.emulatorCore;
   const hasPack =
     !!game.romFile ||
@@ -186,7 +198,27 @@ export function GameDetailPage() {
             style={{ ["--cover-aspect" as string]: coverAspect }}
           >
             {cover ? (
-              <BoxArtImage src={cover} alt={game.title} aspectRatio={coverAspect} />
+              <>
+                <BoxArtImage
+                  src={cover}
+                  alt={game.title}
+                  aspectRatio={coverAspect}
+                  rotation={coverRotation}
+                  layout="intrinsic"
+                />
+                <button
+                  type="button"
+                  className="cover-rotate-btn"
+                  title={t("game.rotateCover")}
+                  aria-label={t("game.rotateCover")}
+                  disabled={rotateCover.isPending}
+                  onClick={() =>
+                    rotateCover.mutate(nextCoverRotation(coverRotation))
+                  }
+                >
+                  <LuRotateCw aria-hidden />
+                </button>
+              </>
             ) : (
               <div className="empty-state">{t("game.noCover")}</div>
             )}

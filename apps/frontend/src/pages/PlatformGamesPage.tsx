@@ -10,6 +10,7 @@ import {
 } from "@shellf/shared";
 import { api, getItemCover, getItemTagList } from "../lib/api";
 import { BoxArtImage } from "../components/BoxArtImage";
+import { PhotoGrid } from "../components/PhotoGrid";
 import { useI18n, type MessageKey } from "../lib/i18n";
 import { TagFilterChips } from "./ItemsPage";
 
@@ -231,7 +232,7 @@ export function PlatformGamesPage() {
           </Link>
         </div>
       ) : (
-        <div className="grid grid-3">
+        <PhotoGrid>
           {items.map((item) => {
             const cover = getItemCover(item);
             const tagList = getItemTagList(item);
@@ -242,7 +243,13 @@ export function PlatformGamesPage() {
                   style={{ ["--cover-aspect" as string]: coverAspect }}
                 >
                   {cover ? (
-                    <BoxArtImage src={cover} alt={item.title} aspectRatio={coverAspect} />
+                    <BoxArtImage
+                      src={cover}
+                      alt={item.title}
+                      aspectRatio={coverAspect}
+                      rotation={item.coverRotation}
+                      layout="intrinsic"
+                    />
                   ) : (
                     <span className="placeholder">?</span>
                   )}
@@ -279,7 +286,7 @@ export function PlatformGamesPage() {
               </Link>
             );
           })}
-        </div>
+        </PhotoGrid>
       )}
     </div>
   );

@@ -71,6 +71,13 @@
       "when": 1783750000000,
       "tag": "0009_fixed_kinds",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "6",
+      "when": 1783760000000,
+      "tag": "0010_cover_rotation",
+      "breakpoints": true
     }
   ]
 }

@@ -232,6 +232,20 @@ export const BOX_ART_ASPECT_RATIOS: Record<string, string> = {
   n64: "4 / 5",
 };
 
+export const COVER_ROTATIONS = [0, 90, 180, 270] as const;
+export type CoverRotation = (typeof COVER_ROTATIONS)[number];
+
+export function normalizeCoverRotation(value: unknown): CoverRotation {
+  const n = Number(value);
+  if (n === 90 || n === 180 || n === 270) return n;
+  return 0;
+}
+
+export function nextCoverRotation(current: CoverRotation): CoverRotation {
+  const idx = COVER_ROTATIONS.indexOf(normalizeCoverRotation(current));
+  return COVER_ROTATIONS[(idx + 1) % COVER_ROTATIONS.length]!;
+}
+
 export const DEFAULT_BOX_ART_ASPECT_RATIO = "2 / 3";
 
 export function getBoxArtAspectRatio(slug?: string | null): string {
@@ -318,6 +332,8 @@ const itemFieldsSchema = z.object({
   condition: z.enum(GAME_CONDITIONS).optional().nullable(),
   isPirate: z.boolean().optional().nullable(),
   notes: z.string().optional().nullable(),
+  /** Main cover rotation in degrees (0, 90, 180, 270). */
+  coverRotation: z.union([z.literal(0), z.literal(90), z.literal(180), z.literal(270)]).optional(),
   /** Tag IDs to attach (replaces existing when provided on update). */
   tagIds: z.array(z.number().int().positive()).max(20).optional().nullable(),
   /** Tag names to upsert and attach (merged with tagIds). */
@@ -337,6 +353,10 @@ export const updateItemSchema = itemFieldsSchema
   .omit({ kindId: true })
   .extend({
     marketPrice: z.number().nonnegative().optional().nullable(),
+    /** ScreenScraper / scraped description */
+    description: z.string().optional().nullable(),
+    /** Scraped cover URL; set null to clear */
+    coverUrl: z.string().optional().nullable(),
   });
 
 export type CreateKindInput = z.infer<typeof createKindSchema>;
@@ -529,6 +549,8 @@ export interface Item {
   condition: GameCondition | null;
   isPirate: boolean;
   notes: string | null;
+  /** Main cover art rotation in degrees: 0, 90, 180, or 270. */
+  coverRotation: CoverRotation;
   tags?: Tag[];
   /** @deprecated Use tags */
   genres?: string[];
@@ -549,6 +571,15 @@ export type Platform = Group & { shortName?: string; gameCount?: number };
 /** @deprecated Use Item */
 export type Game = Item & { platformId?: number; platform?: Group };
 
+export interface DashboardPricedItem {
+  id: number;
+  title: string;
+  groupId: number;
+  groupName: string;
+  marketValue: number;
+  coverUrl: string | null;
+}
+
 export interface DashboardStats {
   totalItems: number;
   totalSpent: number;
@@ -557,6 +588,10 @@ export interface DashboardStats {
   /** Items that contributed a market price to totalMarketValue. */
   marketPricedItems: number;
   byGroup: Array<{ groupId: number; name: string; count: number; spent: number }>;
+  /** Highest PriceCharting values (by item condition). */
+  topExpensive: DashboardPricedItem[];
+  /** Lowest PriceCharting values (by item condition). */
+  topCheapest: DashboardPricedItem[];
   /** @deprecated Use totalItems */
   totalGames?: number;
   /** @deprecated Use byGroup */
