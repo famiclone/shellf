@@ -7,4 +7,5 @@ data/
 .env
 .env.local
 .DS_Store
+# Downloaded EmulatorJS runtime (player.html + config live in emulator-static/)
 apps/frontend/public/emulator/

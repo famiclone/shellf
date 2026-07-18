@@ -62,6 +62,8 @@ Default credentials are `shellf` / `shellf` — change them before exposing the 
 
 Do **not** mount an empty host directory over `/var/www/frontend/emulator` — that hides the baked-in EmulatorJS. Only mount that path if you ship your own emulator files.
 
+Custom player shell (`player.html`, core configs) lives in `apps/frontend/emulator-static/` and is copied into the image at build time.
+
 ## ScreenScraper
 
 Get developer credentials at https://www.screenscraper.fr, then configure them either:

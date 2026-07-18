@@ -10,12 +10,14 @@ import {
   LuUpload,
 } from "react-icons/lu";
 import type { Game, Item, MediaType } from "@shellf/shared";
-import { kindHasFeature } from "@shellf/shared";
-import { api } from "../lib/api";
+import { getBoxArtAspectRatio, kindHasFeature } from "@shellf/shared";
+import { api, getItemCover } from "../lib/api";
+import { BoxArtImage } from "./BoxArtImage";
 import { useI18n, type MessageKey } from "../lib/i18n";
 
 type PendingAction =
   | { kind: "rom-delete" }
+  | { kind: "cover-delete"; source: "box" | "scraped"; assetId?: number }
   | { kind: "media-delete"; assetId: number; label: string }
   | { kind: "patch-delete"; patchId: number; label: string }
   | { kind: "save-delete"; saveId: number; label: string };
@@ -153,12 +155,23 @@ export function EditGameAssets({ gameId, game }: EditGameAssetsProps) {
     onError: onAssetError,
   });
 
+  const clearScrapedCoverMutation = useMutation({
+    mutationFn: () => api.updateItem(gameId, { coverUrl: null }),
+    onSuccess: () => {
+      setPending(null);
+      setAssetError("");
+      refresh();
+    },
+    onError: onAssetError,
+  });
+
   const isBusy =
     deleteRomMutation.isPending ||
     uploadRomMutation.isPending ||
     scrapeMutation.isPending ||
     deleteMediaMutation.isPending ||
     uploadMediaMutation.isPending ||
+    clearScrapedCoverMutation.isPending ||
     deletePatchMutation.isPending ||
     uploadPatchMutation.isPending ||
     deleteSaveMutation.isPending ||
@@ -167,6 +180,13 @@ export function EditGameAssets({ gameId, game }: EditGameAssetsProps) {
   function confirmPending() {
     if (!pending) return;
     if (pending.kind === "rom-delete") deleteRomMutation.mutate();
+    if (pending.kind === "cover-delete") {
+      if (pending.source === "box" && pending.assetId != null) {
+        deleteMediaMutation.mutate(pending.assetId);
+      } else {
+        clearScrapedCoverMutation.mutate();
+      }
+    }
     if (pending.kind === "media-delete") deleteMediaMutation.mutate(pending.assetId);
     if (pending.kind === "patch-delete") deletePatchMutation.mutate(pending.patchId);
     if (pending.kind === "save-delete") deleteSaveMutation.mutate(pending.saveId);
@@ -188,6 +208,7 @@ export function EditGameAssets({ gameId, game }: EditGameAssetsProps) {
             <h3>{t("assets.confirmTitle")}</h3>
             <p>
               {pending.kind === "rom-delete" && t("assets.deleteRom")}
+              {pending.kind === "cover-delete" && t("assets.deleteCover")}
               {pending.kind === "media-delete" &&
                 t("assets.deleteMedia", { label: pending.label })}
               {pending.kind === "patch-delete" &&
@@ -232,10 +253,74 @@ export function EditGameAssets({ gameId, game }: EditGameAssetsProps) {
   const showPatches = kindHasFeature(features, "patches");
   const showSaves = kindHasFeature(features, "saves");
 
+  const coverUrl = getItemCover(game);
+  const boxCover = mediaByType.box[0];
+  const coverSource: "box" | "scraped" | null = boxCover
+    ? "box"
+    : game.scrapedMetadata?.coverUrl
+      ? "scraped"
+      : null;
+  const coverAspect = getBoxArtAspectRatio(game.group?.slug);
+
   return (
     <>
-      <div className="card edit-assets" style={{ maxWidth: 520, marginTop: "1rem" }}>
+      <div className="card edit-assets">
         <h3 style={{ marginBottom: "1rem" }}>{t("assets.files")}</h3>
+
+        <section className="edit-asset-section">
+          <h4>{t("assets.cover")}</h4>
+          {coverUrl && coverSource ? (
+            <div className="edit-cover-row">
+              <div
+                className="edit-cover-preview"
+                style={{ ["--cover-aspect" as string]: coverAspect }}
+              >
+                <BoxArtImage
+                  src={coverUrl}
+                  alt={game.title}
+                  aspectRatio={coverAspect}
+                  rotation={game.coverRotation}
+                  layout="intrinsic"
+                />
+              </div>
+              <div className="edit-cover-meta">
+                <span>
+                  {coverSource === "box"
+                    ? t("media.box")
+                    : t("assets.coverFromScraper")}
+                </span>
+                <button
+                  type="button"
+                  className="btn-danger with-icon"
+                  disabled={isBusy}
+                  onClick={() =>
+                    setPending({
+                      kind: "cover-delete",
+                      source: coverSource,
+                      assetId: boxCover?.id,
+                    })
+                  }
+                >
+                  <LuTrash2 aria-hidden />
+                  {t("common.delete")}
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="edit-asset-empty">
+              <span>{t("assets.noCover")}</span>
+              <button
+                type="button"
+                className="btn-secondary with-icon"
+                disabled={isBusy}
+                onClick={() => boxInputRef.current?.click()}
+              >
+                <LuUpload aria-hidden />
+                {t("common.upload")}
+              </button>
+            </div>
+          )}
+        </section>
 
         {showRom && (
         <section className="edit-asset-section">

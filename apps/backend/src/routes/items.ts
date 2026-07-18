@@ -253,6 +253,8 @@ itemRoutes.patch("/:id", async (c) => {
 
   const {
     marketPrice,
+    description,
+    coverUrl,
     platformId: _platformId,
     tagIds,
     tags: tagNames,
@@ -274,6 +276,9 @@ itemRoutes.patch("/:id", async (c) => {
     patchValues.isPirate = itemData.isPirate ?? false;
   }
   if (itemData.notes !== undefined) patchValues.notes = itemData.notes;
+  if (itemData.coverRotation !== undefined) {
+    patchValues.coverRotation = itemData.coverRotation;
+  }
   if (itemData.customMeta !== undefined) {
     patchValues.customMeta = itemData.customMeta;
   }
@@ -297,23 +302,27 @@ itemRoutes.patch("/:id", async (c) => {
     await syncItemTags(id, resolvedTagIds);
   }
 
-  if (marketPrice !== undefined) {
+  if (marketPrice !== undefined || description !== undefined || coverUrl !== undefined) {
     const existing = await db.query.scrapedMetadata.findFirst({
       where: eq(scrapedMetadata.itemId, id),
     });
+    const scrapedPatch: Partial<typeof scrapedMetadata.$inferInsert> = {};
+    if (marketPrice !== undefined) {
+      scrapedPatch.marketPrice = marketPrice;
+      scrapedPatch.marketPriceSyncedAt = new Date().toISOString();
+    }
+    if (description !== undefined) scrapedPatch.description = description;
+    if (coverUrl !== undefined) scrapedPatch.coverUrl = coverUrl;
+
     if (existing) {
       await db
         .update(scrapedMetadata)
-        .set({
-          marketPrice,
-          marketPriceSyncedAt: new Date().toISOString(),
-        })
+        .set(scrapedPatch)
         .where(eq(scrapedMetadata.itemId, id));
     } else {
       await db.insert(scrapedMetadata).values({
         itemId: id,
-        marketPrice,
-        marketPriceSyncedAt: new Date().toISOString(),
+        ...scrapedPatch,
       });
     }
   }

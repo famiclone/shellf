@@ -13,7 +13,9 @@ RUN bun run build
 FROM alpine:3.20 AS emulator
 RUN apk add --no-cache bash curl git unzip
 COPY scripts/setup-emulator.sh /setup-emulator.sh
+COPY apps/frontend/emulator-static /emulator-static
 ENV EMULATOR_DEST=/emulator
+ENV EMULATOR_STATIC=/emulator-static
 RUN bash /setup-emulator.sh
 
 FROM nginx:alpine
@@ -21,3 +23,5 @@ COPY nginx/nginx.conf /etc/nginx/nginx.conf
 COPY nginx/.htpasswd /etc/nginx/.htpasswd
 COPY --from=frontend-builder /app/apps/frontend/dist /var/www/frontend
 COPY --from=emulator /emulator /var/www/frontend/emulator
+# Ensure Shellf player shell is present even if CDN stage is cached oddly
+COPY apps/frontend/emulator-static/ /var/www/frontend/emulator/

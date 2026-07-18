@@ -1,0 +1,359 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Emulator</title>
+    <link rel="stylesheet" href="/emulator/data/emulator.min.css" />
+    <style>
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        margin: 0;
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+        background: #0f1117;
+      }
+      #game {
+        width: 100%;
+        height: 100%;
+        min-height: 360px;
+      }
+      #status {
+        position: fixed;
+        inset: 0;
+        z-index: 10;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: #8b93a7;
+        font-family: system-ui, sans-serif;
+        font-size: 14px;
+        background: #0f1117;
+        padding: 1rem;
+        text-align: center;
+      }
+      #status.error {
+        color: #f87171;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="status">Loading ROM...</div>
+    <div id="game"></div>
+    <script>
+      const MESSAGES = {
+        en: {
+          loadingRom: "Loading ROM...",
+          loadingSave: "Loading save...",
+          missingParams: "Missing itemId or core",
+          configFailed: "Failed to load emulator config",
+          emptyRom: "ROM is empty — check the file on the server",
+          emptySave: "Save file is empty",
+          saveFailed: "Failed to load save",
+          starting: "Starting emulator...",
+          loadingCore: "Loading core...",
+          errorPrefix: "Error: ",
+          unknown: "unknown",
+          loaderFailed: "Failed to load EmulatorJS",
+          romLoadFailed: "Failed to load ROM",
+        },
+        uk: {
+          loadingRom: "Завантаження ROM...",
+          loadingSave: "Завантаження сейву...",
+          missingParams: "Немає itemId або core",
+          configFailed: "Не вдалося завантажити базовий конфіг емулятора",
+          emptyRom: "ROM порожній — перевірте файл на сервері",
+          emptySave: "Файл сейву порожній",
+          saveFailed: "Не вдалося завантажити сейв",
+          starting: "Запуск емулятора...",
+          loadingCore: "Завантаження ядра...",
+          errorPrefix: "Помилка: ",
+          unknown: "невідома",
+          loaderFailed: "Не вдалося завантажити EmulatorJS",
+          romLoadFailed: "Помилка завантаження ROM",
+        },
+      };
+
+      const EXT_BY_CORE = {
+        nes: ".nes",
+        snes: ".sfc",
+        gb: ".gb",
+        gba: ".gba",
+        segaMD: ".md",
+        n64: ".z64",
+      };
+
+      const params = new URLSearchParams(location.search);
+      const lang = params.get("lang") === "uk" ? "uk" : "en";
+      const t = MESSAGES[lang];
+      document.documentElement.lang = lang;
+      document.getElementById("status").textContent = t.loadingRom;
+
+      function parseFilename(cd, itemId, core) {
+        const star = cd.match(/filename\*=UTF-8''([^;\s]+)/i);
+        if (star) return decodeURIComponent(star[1]);
+        const quoted = cd.match(/filename="([^"]+)"/i);
+        if (quoted) return quoted[1];
+        return `item_${itemId}${EXT_BY_CORE[core] || ".bin"}`;
+      }
+
+      function ensureRomFilename(filename, core) {
+        if (/\.[a-z0-9]+$/i.test(filename)) return filename;
+        return filename + (EXT_BY_CORE[core] || ".bin");
+      }
+
+      function showError(msg) {
+        const text = String(msg || t.unknown);
+        // Prefer parent toast notifications over red text inside the frame
+        if (window.parent && window.parent !== window) {
+          window.parent.postMessage(
+            { type: "shellf:emulator-alert", level: "error", message: text },
+            window.location.origin,
+          );
+          hideStatus();
+          return;
+        }
+        const status = document.getElementById("status");
+        status.textContent = text;
+        status.className = "error";
+        status.style.display = "flex";
+      }
+
+      function hideStatus() {
+        document.getElementById("status").style.display = "none";
+      }
+
+      async function loadEmulatorConfig(core) {
+        const [defaultsRes, coreRes, settingsRes] = await Promise.all([
+          fetch("/emulator/config/_defaults.json"),
+          fetch(`/emulator/config/${encodeURIComponent(core)}.json`),
+          fetch("/api/settings"),
+        ]);
+
+        if (!defaultsRes.ok) {
+          throw new Error(t.configFailed);
+        }
+
+        const defaults = await defaultsRes.json();
+        const coreConfig = coreRes.ok ? await coreRes.json() : {};
+        let overrides = {};
+        if (settingsRes.ok) {
+          try {
+            const settings = await settingsRes.json();
+            overrides =
+              settings && typeof settings.emulator === "object" && settings.emulator
+                ? settings.emulator
+                : {};
+          } catch {
+            overrides = {};
+          }
+        }
+
+        const defaultsOverride =
+          overrides._defaults && typeof overrides._defaults === "object"
+            ? overrides._defaults
+            : {};
+        const coreOverride =
+          overrides[core] && typeof overrides[core] === "object"
+            ? overrides[core]
+            : {};
+
+        return {
+          ...defaults,
+          ...defaultsOverride,
+          ...coreConfig,
+          ...coreOverride,
+        };
+      }
+
+      function applyEmulatorConfig(config) {
+        if (config.controlScheme) {
+          window.EJS_controlScheme = config.controlScheme;
+        }
+        if (config.defaultControls) {
+          window.EJS_defaultControls = config.defaultControls;
+        }
+        if (config.virtualGamepad) {
+          window.EJS_VirtualGamepadSettings = config.virtualGamepad;
+        }
+        if (config.defaultOptions && Object.keys(config.defaultOptions).length) {
+          window.EJS_defaultOptions = config.defaultOptions;
+        }
+      }
+
+      function ensureDir(FS, path) {
+        const parts = path.split("/").filter(Boolean);
+        let current = "";
+        for (let i = 0; i < parts.length - 1; i++) {
+          current += "/" + parts[i];
+          if (!FS.analyzePath(current).exists) {
+            FS.mkdir(current);
+          }
+        }
+      }
+
+      function writeSramFile(FS, path, bytes) {
+        ensureDir(FS, path);
+        if (FS.analyzePath(path).exists) {
+          FS.unlink(path);
+        }
+        FS.writeFile(path, bytes);
+      }
+
+      function injectSram(saveBytes) {
+        const emu = window.EJS_emulator;
+        if (!emu?.gameManager || !saveBytes) return false;
+        const path =
+          emu.gameManager.getSaveFilePath?.() ||
+          `/data/saves/${window.EJS_gameName || "game"}.srm`;
+        writeSramFile(emu.gameManager.FS, path, new Uint8Array(saveBytes));
+        if (typeof emu.gameManager.loadSaveFiles === "function") {
+          emu.gameManager.loadSaveFiles();
+        }
+        return true;
+      }
+
+      async function boot() {
+        const itemId = params.get("itemId") || params.get("gameId");
+        const core = params.get("core");
+        const patchId = params.get("patchId");
+        const saveId = params.get("saveId");
+        const status = document.getElementById("status");
+
+        if (!itemId || !core) {
+          showError(t.missingParams);
+          return;
+        }
+
+        try {
+          let romUrl = `/api/items/${itemId}/rom?inline=1`;
+          if (patchId) romUrl += `&patchId=${encodeURIComponent(patchId)}`;
+
+          const response = await fetch(romUrl);
+          if (!response.ok) {
+            let detail = `HTTP ${response.status}`;
+            try {
+              const body = await response.json();
+              if (body?.error) detail = body.error;
+            } catch {
+              // ignore non-JSON error bodies
+            }
+            throw new Error(`ROM: ${detail}`);
+          }
+
+          const buffer = await response.arrayBuffer();
+          if (!buffer.byteLength) {
+            throw new Error(t.emptyRom);
+          }
+
+          let saveBytes = null;
+          if (saveId) {
+            status.textContent = t.loadingSave;
+            const saveRes = await fetch(`/api/items/${itemId}/saves/${saveId}`);
+            if (!saveRes.ok) {
+              let detail = `HTTP ${saveRes.status}`;
+              try {
+                const body = await saveRes.json();
+                if (body?.error) detail = body.error;
+              } catch {
+                // ignore
+              }
+              throw new Error(`${t.saveFailed}: ${detail}`);
+            }
+            saveBytes = await saveRes.arrayBuffer();
+            if (!saveBytes.byteLength) {
+              throw new Error(t.emptySave);
+            }
+          }
+
+          const filename = ensureRomFilename(
+            parseFilename(
+              response.headers.get("Content-Disposition") || "",
+              itemId,
+              core,
+            ),
+            core,
+          );
+
+          status.textContent = t.starting;
+
+          const romFile = new File([buffer], filename, {
+            type: "application/octet-stream",
+          });
+
+          const emulatorConfig = await loadEmulatorConfig(core);
+          applyEmulatorConfig(emulatorConfig);
+
+          window.EJS_player = "#game";
+          window.EJS_gameUrl = romFile;
+          window.EJS_gameName = filename.replace(/\.[^.]+$/, "");
+          window.EJS_gameID = Number(itemId);
+          window.EJS_core = core;
+          window.EJS_pathtodata = "/emulator/data/";
+          window.EJS_startOnLoaded = true;
+          window.EJS_color = "#6c8cff";
+          window.EJS_backgroundColor = "#0f1117";
+          // Avoid IndexedDB races; rom/core always load from network/files
+          window.EJS_disableDatabases = true;
+
+          let bootTimeout = null;
+
+          window.EJS_ready = function () {
+            // Hand off to EmulatorJS loading UI (opaque overlay hid errors/progress)
+            hideStatus();
+            if (!saveBytes || !window.EJS_emulator) return;
+            window.EJS_emulator.on("saveDatabaseLoaded", function (FS) {
+              const path = `/data/saves/${window.EJS_gameName || "game"}.srm`;
+              writeSramFile(FS, path, new Uint8Array(saveBytes));
+            });
+          };
+
+          window.EJS_onGameStart = function () {
+            if (bootTimeout) clearTimeout(bootTimeout);
+            hideStatus();
+            if (saveBytes) {
+              try {
+                injectSram(saveBytes);
+              } catch (e) {
+                console.warn("Failed to inject SRAM save", e);
+              }
+            }
+          };
+
+          bootTimeout = setTimeout(function () {
+            if (window.EJS_emulator?.started) return;
+            const ejsErr = document.querySelector(".ejs_error_text, .ejs_loading_text");
+            const detail = ejsErr?.textContent?.trim();
+            showError(detail || t.loadingCore + " — timeout");
+          }, 45000);
+
+          window.addEventListener("error", function (e) {
+            if (bootTimeout) clearTimeout(bootTimeout);
+            showError(t.errorPrefix + (e.message || t.unknown));
+          });
+
+          window.addEventListener("unhandledrejection", function (e) {
+            if (bootTimeout) clearTimeout(bootTimeout);
+            showError(t.errorPrefix + (e.reason?.message || e.reason || t.unknown));
+          });
+
+          const script = document.createElement("script");
+          script.src = "/emulator/data/loader.js";
+          script.onerror = function () {
+            if (bootTimeout) clearTimeout(bootTimeout);
+            showError(t.loaderFailed);
+          };
+          document.body.appendChild(script);
+        } catch (err) {
+          showError(err.message || t.romLoadFailed);
+        }
+      }
+
+      boot();
+    </script>
+  </body>
+</html>

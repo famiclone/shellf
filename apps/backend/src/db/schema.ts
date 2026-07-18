@@ -45,6 +45,8 @@ export const items = sqliteTable("items", {
   condition: text("condition"),
   isPirate: integer("is_pirate", { mode: "boolean" }).notNull().default(false),
   notes: text("notes"),
+  /** Main cover art rotation in degrees: 0, 90, 180, or 270. */
+  coverRotation: integer("cover_rotation").notNull().default(0),
   customMeta: text("custom_meta", { mode: "json" }).$type<Record<string, unknown>>(),
   createdAt: text("created_at")
     .notNull()

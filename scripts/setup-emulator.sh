@@ -45,4 +45,12 @@ for core in "${CORES[@]}"; do
   curl -fsSL -o "$CORES_DIR/$core" "$CDN/cores/$core" || echo "    (skipped — not on CDN)"
 done
 
+STATIC="${EMULATOR_STATIC:-$ROOT/apps/frontend/emulator-static}"
+if [ -d "$STATIC" ]; then
+  echo "Copying Shellf emulator shell from $STATIC..."
+  cp -a "$STATIC/." "$DEST/"
+else
+  echo "Warning: no emulator-static at $STATIC (player.html missing)" >&2
+fi
+
 echo "EmulatorJS ready at $DEST"

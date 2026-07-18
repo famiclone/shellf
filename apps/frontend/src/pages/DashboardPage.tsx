@@ -1,8 +1,40 @@
 import { useQuery } from "@tanstack/react-query";
 import { LuChartLine, LuGamepad2, LuLayers, LuWallet } from "react-icons/lu";
 import { Link } from "react-router-dom";
+import type { DashboardPricedItem } from "@shellf/shared";
 import { api } from "../lib/api";
 import { useI18n } from "../lib/i18n";
+
+function PricedItemRow({
+  item,
+  numberLocale,
+}: {
+  item: DashboardPricedItem;
+  numberLocale: string;
+}) {
+  return (
+    <Link to={`/items/${item.id}`} className="dashboard-priced-row">
+      <div className="dashboard-priced-thumb">
+        {item.coverUrl ? (
+          <img src={item.coverUrl} alt="" />
+        ) : (
+          <span className="placeholder">?</span>
+        )}
+      </div>
+      <div className="dashboard-priced-body">
+        <div className="dashboard-priced-title">{item.title}</div>
+        <div className="meta">{item.groupName}</div>
+      </div>
+      <div className="dashboard-priced-value">
+        $
+        {item.marketValue.toLocaleString(numberLocale, {
+          minimumFractionDigits: 0,
+          maximumFractionDigits: 2,
+        })}
+      </div>
+    </Link>
+  );
+}
 
 export function DashboardPage() {
   const { t, numberLocale } = useI18n();
@@ -25,6 +57,9 @@ export function DashboardPage() {
         spent: p.spent,
       })) ??
     [];
+
+  const topExpensive = data?.topExpensive ?? [];
+  const topCheapest = data?.topCheapest ?? [];
 
   return (
     <div>
@@ -71,6 +106,43 @@ export function DashboardPage() {
           <div className="label">{t("dashboard.platforms")}</div>
         </div>
       </div>
+
+      {(topExpensive.length > 0 || topCheapest.length > 0) && (
+        <div className="dashboard-priced-grid">
+          <section className="card dashboard-priced-card">
+            <h2>{t("dashboard.topExpensive")}</h2>
+            {topExpensive.length > 0 ? (
+              <div className="dashboard-priced-list">
+                {topExpensive.map((item) => (
+                  <PricedItemRow
+                    key={item.id}
+                    item={item}
+                    numberLocale={numberLocale}
+                  />
+                ))}
+              </div>
+            ) : (
+              <p className="meta">{t("dashboard.noMarketPrices")}</p>
+            )}
+          </section>
+          <section className="card dashboard-priced-card">
+            <h2>{t("dashboard.topCheapest")}</h2>
+            {topCheapest.length > 0 ? (
+              <div className="dashboard-priced-list">
+                {topCheapest.map((item) => (
+                  <PricedItemRow
+                    key={`cheap-${item.id}`}
+                    item={item}
+                    numberLocale={numberLocale}
+                  />
+                ))}
+              </div>
+            ) : (
+              <p className="meta">{t("dashboard.noMarketPrices")}</p>
+            )}
+          </section>
+        </div>
+      )}
 
       <h2 style={{ marginBottom: "1rem", fontSize: "1.1rem" }}>
         {t("dashboard.byPlatform")}
