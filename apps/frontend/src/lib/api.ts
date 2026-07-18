@@ -132,6 +132,9 @@ export const api = {
     request<{ ok: boolean }>(`/items/${itemId}/media/${assetId}`, {
       method: "DELETE",
     }),
+  /** Clears box media and scraped coverUrl so no ScreenScraper fallback remains. */
+  clearCover: (id: number) =>
+    request<Item>(`/items/${id}/cover`, { method: "DELETE" }),
   getMediaUrl: (itemId: number, assetId: number) =>
     `/api/items/${itemId}/media/${assetId}`,
   getRomDownloadUrl: (id: number, patchId?: number, inline?: boolean) => {

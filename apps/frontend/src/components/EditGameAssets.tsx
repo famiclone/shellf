@@ -156,20 +156,12 @@ export function EditGameAssets({ gameId, game }: EditGameAssetsProps) {
   });
 
   const clearCoverMutation = useMutation({
-    mutationFn: async (opts: {
-      source: "box" | "scraped";
-      assetId?: number;
-    }) => {
-      // Cover uses box media first, then scraped URL — clear both so delete
-      // does not leave the ScreenScraper image as a fallback.
-      if (opts.source === "box" && opts.assetId != null) {
-        await api.deleteMedia(gameId, opts.assetId);
-      }
-      await api.updateItem(gameId, { coverUrl: null });
-    },
-    onSuccess: () => {
+    mutationFn: () => api.clearCover(gameId),
+    onSuccess: (updated) => {
       setPending(null);
       setAssetError("");
+      queryClient.setQueryData(["item", gameId], updated);
+      queryClient.invalidateQueries({ queryKey: ["items"] });
       refresh();
     },
     onError: onAssetError,
@@ -191,10 +183,7 @@ export function EditGameAssets({ gameId, game }: EditGameAssetsProps) {
     if (!pending) return;
     if (pending.kind === "rom-delete") deleteRomMutation.mutate();
     if (pending.kind === "cover-delete") {
-      clearCoverMutation.mutate({
-        source: pending.source,
-        assetId: pending.assetId,
-      });
+      clearCoverMutation.mutate();
     }
     if (pending.kind === "media-delete") deleteMediaMutation.mutate(pending.assetId);
     if (pending.kind === "patch-delete") deletePatchMutation.mutate(pending.patchId);

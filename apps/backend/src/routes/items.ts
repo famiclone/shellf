@@ -343,6 +343,37 @@ itemRoutes.delete("/:id", async (c) => {
   return c.json({ ok: true });
 });
 
+/** Remove display cover: all box media + scraped ScreenScraper coverUrl. */
+itemRoutes.delete("/:id/cover", async (c) => {
+  const id = Number(c.req.param("id"));
+  const item = await getItemOr404(id);
+  if (!item) return c.json({ error: "Айтем не знайдено" }, 404);
+
+  const boxAssets = (item.mediaAssets ?? []).filter((m) => m.type === "box");
+  for (const asset of boxAssets) {
+    deleteStoredFile(asset.storagePath);
+    await db.delete(mediaAssets).where(eq(mediaAssets.id, asset.id));
+  }
+
+  const existing = await db.query.scrapedMetadata.findFirst({
+    where: eq(scrapedMetadata.itemId, id),
+  });
+  if (existing) {
+    await db
+      .update(scrapedMetadata)
+      .set({ coverUrl: null })
+      .where(eq(scrapedMetadata.itemId, id));
+  }
+
+  await db
+    .update(items)
+    .set({ updatedAt: new Date().toISOString() })
+    .where(eq(items.id, id));
+
+  const updated = await getItemOr404(id);
+  return c.json(updated);
+});
+
 itemRoutes.post("/:id/rom", async (c) => {
   const id = Number(c.req.param("id"));
   const item = await getItemOr404(id);
