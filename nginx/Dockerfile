@@ -13,7 +13,9 @@ RUN bun run build
 FROM alpine:3.20 AS emulator
 RUN apk add --no-cache bash curl git unzip
 COPY scripts/setup-emulator.sh /setup-emulator.sh
+COPY apps/frontend/emulator-static /emulator-static
 ENV EMULATOR_DEST=/emulator
+ENV EMULATOR_STATIC=/emulator-static
 RUN bash /setup-emulator.sh
 
 FROM nginx:alpine
